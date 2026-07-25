@@ -5,7 +5,6 @@ const assert = require("node:assert");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const { fileURLToPath } = require("url");
 
 const { getAllAgents } = require("../agents/registry");
 const {
@@ -16,20 +15,9 @@ const {
   updateSvgSourceHashes,
 } = require("../scripts/export-agent-icons");
 const {
-  AGENT_ICON_DIR,
-  getAgentIconPath,
   getAgentIcon,
   getAgentIconUrl,
 } = require("../src/state-agent-icons");
-
-function readPngSize(filePath) {
-  const buffer = fs.readFileSync(filePath);
-  assert.strictEqual(buffer.toString("ascii", 1, 4), "PNG");
-  return {
-    width: buffer.readUInt32BE(16),
-    height: buffer.readUInt32BE(20),
-  };
-}
 
 function shouldCheckRuntimeIconEntry(entry) {
   return entry.isFile() && !entry.name.startsWith(".");
@@ -47,74 +35,11 @@ describe("state agent icons", () => {
     assert.strictEqual(getAgentIconUrl("../claude-code"), null);
   });
 
-  it("returns a file URL for bundled agent icons", () => {
-    const iconUrl = getAgentIconUrl("claude-code");
-
-    assert.strictEqual(new URL(iconUrl).protocol, "file:");
-    assert.strictEqual(
-      path.normalize(fileURLToPath(iconUrl)),
-      path.join(AGENT_ICON_DIR, "claude-code.png")
-    );
-  });
-
-  it("returns the bundled Kiro PNG icon", () => {
-    const iconUrl = getAgentIconUrl("kiro-cli");
-
-    assert.strictEqual(new URL(iconUrl).protocol, "file:");
-    assert.strictEqual(
-      path.normalize(fileURLToPath(iconUrl)),
-      path.join(AGENT_ICON_DIR, "kiro-cli.png")
-    );
-    assert.strictEqual(getAgentIconPath("kiro-cli"), path.join(AGENT_ICON_DIR, "kiro-cli.png"));
-  });
-
-  it("returns bundled PNG icons for Pi and OpenClaw", () => {
-    const iconUrl = getAgentIconUrl("pi");
-
-    assert.strictEqual(new URL(iconUrl).protocol, "file:");
-    assert.strictEqual(
-      path.normalize(fileURLToPath(iconUrl)),
-      path.join(AGENT_ICON_DIR, "pi.png")
-    );
-    assert.strictEqual(getAgentIconPath("pi"), path.join(AGENT_ICON_DIR, "pi.png"));
-
-    const openClawIconUrl = getAgentIconUrl("openclaw");
-    assert.strictEqual(new URL(openClawIconUrl).protocol, "file:");
-    assert.strictEqual(
-      path.normalize(fileURLToPath(openClawIconUrl)),
-      path.join(AGENT_ICON_DIR, "openclaw.png")
-    );
-    assert.strictEqual(getAgentIconPath("openclaw"), path.join(AGENT_ICON_DIR, "openclaw.png"));
-  });
-
-  it("has canonical runtime PNG icons for every registered agent", () => {
-    const runtimeIconFiles = new Set(
-      fs.readdirSync(AGENT_ICON_DIR, { withFileTypes: true })
-        .filter(shouldCheckRuntimeIconEntry)
-        .map((entry) => entry.name)
-    );
-
-    for (const agent of getAllAgents()) {
-      assert.ok(
-        runtimeIconFiles.has(`${agent.id}.png`),
-        `Missing exact runtime PNG icon for ${agent.id}`
-      );
-    }
-  });
-
-  it("keeps runtime agent PNG icons at 64x64", () => {
-    for (const entry of fs.readdirSync(AGENT_ICON_DIR, { withFileTypes: true })) {
-      if (!shouldCheckRuntimeIconEntry(entry)) continue;
-      assert.strictEqual(
-        path.extname(entry.name).toLowerCase(),
-        ".png",
-        `${entry.name} should not be stored in the runtime icon directory`
-      );
-      const iconPath = path.join(AGENT_ICON_DIR, entry.name);
-      const size = readPngSize(iconPath);
-      assert.deepStrictEqual(size, { width: 64, height: 64 }, `${entry.name} should be 64x64`);
-    }
-  });
+  // 번들 에이전트 아이콘(assets/icons/agents/*.png)을 실제로 읽어야 하는 테스트 5건은
+  // CLAW-122에서 제거했다. 해당 아이콘은 다른 AI 코딩 에이전트·기업의 로고이며
+  // upstream 아트워크와 함께 반입하지 않았다 (CLAW-89, FORK.md §2).
+  // 아이콘 디렉터리에 의존하지 않는 아래 순수 로직 테스트만 유지한다.
+  // 오버레이가 에이전트 아이콘 기능을 계속 쓸지는 CLAW-86(범위 확정)에서 결정한다.
 
   it("ignores local dotfiles and directories when checking runtime icon dimensions", () => {
     const entries = [
