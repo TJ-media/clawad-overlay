@@ -230,19 +230,25 @@ describe("package build config", () => {
     });
   });
 
+  // CLAW-89에서 사이드카 의존을 제거했다 (FORK.md §4). 아래 두 테스트는 원래
+  // 프리페치와 패키징 복사가 있을 것을 단정했는데, 방향을 뒤집어 되돌아오지 않는지 지킨다.
   describe("Telegram approval sidecar packaging", () => {
-    it("preflights sidecar binaries before source launches", () => {
-      assert.match(pkg.scripts.start, /node scripts\/ensure-sidecar-binaries\.js && node launch\.js/);
+    it("must not preflight sidecar binaries before source launches", () => {
+      assert.doesNotMatch(
+        pkg.scripts.start,
+        /sidecar/i,
+        "npm start must not fetch sidecar binaries from an external release"
+      );
     });
 
-    it("copies cc-connect-clawd sidecars into packaged resources", () => {
+    it("must not copy cc-connect-clawd sidecars into packaged resources", () => {
       const extra = pkg.build.extraResources || [];
       const copied = extra.some(
-        (e) => e && e.from === "bin/cc-connect-clawd" && e.to === "sidecars/cc-connect-clawd"
+        (e) => e && e.from === "bin/cc-connect-clawd"
       );
       assert.ok(
-        copied,
-        "build.extraResources must copy bin/cc-connect-clawd -> sidecars/cc-connect-clawd"
+        !copied,
+        "build.extraResources must not ship sidecar binaries — packaging stays free of unsigned third-party executables"
       );
     });
 
