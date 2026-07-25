@@ -18,19 +18,31 @@ themeLoader.init(path.join(__dirname, "..", "src"));
 describe("visible margin envelopes", () => {
   const bounds = { x: 0, y: 0, width: 280, height: 280 };
 
+  // marginBox는 선택 필드다. 배포 테마가 그걸 갖고 있는지와, 있을 때 contentBox보다
+  // 우선하는지는 별개 문제이므로 테스트가 직접 구성한다 (CLAW-122).
   it("prefers layout.marginBox over contentBox when present", () => {
-    const clawd = themeLoader.loadTheme("clawd");
-    assert.deepStrictEqual(getThemeMarginBox(clawd), clawd.layout.marginBox);
+    const theme = structuredClone(themeLoader.loadTheme(themeLoader.DEFAULT_THEME_ID));
+    const contentBox = theme.layout.contentBox;
+    // 위로만 넓힌다 — 아래는 그대로 두어 bottom 여백이 바뀌지 않는지 확인한다.
+    const grow = 40;
+    theme.layout.marginBox = {
+      x: contentBox.x,
+      y: contentBox.y - grow,
+      width: contentBox.width,
+      height: contentBox.height + grow,
+    };
 
-    const idleFile = clawd.states.idle[0];
-    const contentRect = hitGeometry.getContentRectScreen(clawd, bounds, "idle", idleFile, {
-      box: clawd.layout.contentBox,
+    assert.deepStrictEqual(getThemeMarginBox(theme), theme.layout.marginBox);
+
+    const idleFile = theme.states.idle[0];
+    const contentRect = hitGeometry.getContentRectScreen(theme, bounds, "idle", idleFile, {
+      box: contentBox,
     });
-    const marginRect = hitGeometry.getContentRectScreen(clawd, bounds, "idle", idleFile, {
-      box: clawd.layout.marginBox,
+    const marginRect = hitGeometry.getContentRectScreen(theme, bounds, "idle", idleFile, {
+      box: theme.layout.marginBox,
     });
 
-    assert.ok(marginRect.top < contentRect.top);
+    assert.ok(marginRect.top < contentRect.top, "marginBox는 contentBox보다 위로 넓어야 한다");
     assert.strictEqual(
       Math.round(bounds.y + bounds.height - marginRect.bottom),
       Math.round(bounds.y + bounds.height - contentRect.bottom)
@@ -38,21 +50,26 @@ describe("visible margin envelopes", () => {
   });
 
   it("collects a non-mini envelope file set", () => {
-    const clawd = themeLoader.loadTheme("clawd");
-    const files = collectThemeEnvelopeFiles(clawd);
+    const theme = themeLoader.loadTheme(themeLoader.DEFAULT_THEME_ID);
+    const files = collectThemeEnvelopeFiles(theme);
 
-    assert.ok(files.includes("clawd-working-typing.svg"));
-    assert.ok(files.includes("clawd-react-drag.svg"));
-    assert.ok(!files.includes("clawd-mini-idle.svg"));
-    assert.ok(!files.some((file) => file.startsWith("mini-")));
+    // 특정 파일명을 단정하면 테마 교체마다 깨진다. 계약만 확인한다 —
+    // 일반 상태 스프라이트는 포함하고, mini 전용 스프라이트는 제외한다.
+    assert.ok(files.length > 0, "envelope이 비어 있다");
+    assert.ok(files.includes(theme.states.idle[0]));
+    assert.ok(files.includes(theme.workingTiers[0].file));
+    assert.ok(
+      !files.some((file) => /(^|[-/])mini-/.test(file)),
+      `mini 전용 스프라이트가 섞였다: ${files.filter((f) => /mini-/.test(f)).join(", ")}`
+    );
   });
 
   it("uses the minimum top and bottom margins across a theme envelope", () => {
-    const calico = themeLoader.loadTheme("calico");
-    const files = collectThemeEnvelopeFiles(calico);
+    const theme = themeLoader.loadTheme(themeLoader.DEFAULT_THEME_ID);
+    const files = collectThemeEnvelopeFiles(theme);
     const expected = files.reduce((acc, file) => {
-      const rect = hitGeometry.getContentRectScreen(calico, bounds, null, file, {
-        box: calico.layout.contentBox,
+      const rect = hitGeometry.getContentRectScreen(theme, bounds, null, file, {
+        box: theme.layout.contentBox,
       });
       if (!rect) return acc;
       return {
@@ -61,13 +78,15 @@ describe("visible margin envelopes", () => {
       };
     }, { top: Infinity, bottom: Infinity });
 
-    const stable = computeStableVisibleContentMargins(calico, bounds);
+    const stable = computeStableVisibleContentMargins(theme, bounds);
     assert.deepStrictEqual(stable, expected);
 
-    const idleRect = hitGeometry.getContentRectScreen(calico, bounds, "idle", calico.states.idle[0], {
-      box: calico.layout.contentBox,
+    // idle도 envelope의 일부이므로 최솟값은 idle보다 크지 않다. 원래 이 단정은
+    // `<` 였는데, 그건 스프라이트별 지오메트리 편차가 있는 테마에서만 성립한다.
+    const idleRect = hitGeometry.getContentRectScreen(theme, bounds, "idle", theme.states.idle[0], {
+      box: theme.layout.contentBox,
     });
-    assert.ok(stable.top < Math.round(idleRect.top - bounds.y));
+    assert.ok(stable.top <= Math.round(idleRect.top - bounds.y));
     assert.ok(stable.bottom <= Math.round(bounds.y + bounds.height - idleRect.bottom));
   });
 
