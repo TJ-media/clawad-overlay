@@ -390,7 +390,7 @@ function registerSettingsIpc(options = {}) {
   handle("settings:list-themes", () => {
     try {
       const activeTheme = getActiveTheme();
-      const activeId = activeTheme ? activeTheme._id : "clawd";
+      const activeId = activeTheme ? activeTheme._id : "clawad";
       return themeLoader.listThemesWithMetadata().map((theme) => {
         const active = theme.id === activeId;
         const runtimeCapabilities = active

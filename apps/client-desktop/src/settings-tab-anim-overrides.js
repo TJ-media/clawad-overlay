@@ -1351,7 +1351,7 @@
     themeMeta.className = "anim-override-meta";
     const themeLabel = document.createElement("div");
     themeLabel.className = "anim-override-meta-label";
-    themeLabel.textContent = `${t("animOverridesCurrentTheme")}: ${(data.theme && data.theme.name) || "clawd"}`;
+    themeLabel.textContent = `${t("animOverridesCurrentTheme")}: ${(data.theme && data.theme.name) || "ClawAd"}`;
     themeMeta.appendChild(themeLabel);
 
     const primaryActions = document.createElement("div");

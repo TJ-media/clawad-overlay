@@ -42,6 +42,14 @@ const {
   applyUserOverridesPatch: _applyUserOverridesPatch,
 } = require("./theme-variants");
 
+// ── Constants ──
+
+// 기본 테마 id. 포크 원본은 "clawd"(Anthropic 캐릭터)였으나 해당 아트워크는
+// 상업적 사용이 금지돼 반입하지 않았다 — 클로애드 자체 마스코트로 대체한다.
+// 테마를 못 찾거나 검증에 실패했을 때 lenient 모드가 되돌아갈 최종 목적지이므로,
+// themes/{DEFAULT_THEME_ID}/theme.json 은 항상 존재해야 한다.
+const DEFAULT_THEME_ID = "clawad";
+
 // ── State ──
 
 let runtimeOwner = null;
@@ -162,8 +170,8 @@ function loadTheme(themeId, opts = {}) {
     const msg = `Theme "${themeId}" not found`;
     if (strict) throw new Error(msg);
     console.error(`[theme-loader] ${msg}`);
-    if (themeId !== "clawd") return loadTheme("clawd");
-    throw new Error("Default theme 'clawd' not found");
+    if (themeId !== DEFAULT_THEME_ID) return loadTheme(DEFAULT_THEME_ID);
+    throw new Error(`Default theme '${DEFAULT_THEME_ID}' not found`);
   }
 
   const errors = validateTheme(raw);
@@ -171,7 +179,7 @@ function loadTheme(themeId, opts = {}) {
     const msg = `Theme "${themeId}" validation errors: ${errors.join("; ")}`;
     if (strict) throw new Error(msg);
     console.error(`[theme-loader] ${msg}`);
-    if (themeId !== "clawd") return loadTheme("clawd");
+    if (themeId !== DEFAULT_THEME_ID) return loadTheme(DEFAULT_THEME_ID);
   }
 
   // Resolve variant + apply patch BEFORE mergeDefaults so that geometry
@@ -462,6 +470,7 @@ function listThemesWithMetadata() {
 }
 
 module.exports = {
+  DEFAULT_THEME_ID,
   init,
   bindActiveThemeRuntime,
   discoverThemes,

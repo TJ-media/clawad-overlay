@@ -68,6 +68,16 @@ AGPL이 요구하는 저작권 표시·변경 고지는 이 문서와 보존된 
   - `CLAUDE.md`를 저장소 루트 `CLAUDE.md`를 가리키도록 교체 (원본은 `AGENTS.md` 한 줄 포인터였다)
   - `AGENTS.md` 상단에 upstream 문서임을 알리는 배너 추가 — 내용은 보존
 
+- 2026-07-25 — 기본 테마를 클로애드 마스코트로 교체. (CLAW-89)
+  - `themes/clawad/` 추가 (에셋 44개, v1.6.0). 아트 라이선스는 `themes/clawad/LICENSE`에
+    ARR로 분리 표기 — upstream이 `assets/LICENSE`로 하던 방식과 동일하다
+  - `src/theme-loader.js`에 `DEFAULT_THEME_ID` 상수 신설(`"clawad"`)하고 폴백 경로에 적용
+  - 기본 테마 id 폴백 9곳(`prefs.js`·`main.js`·`codex-pet-main.js`·`settings-ipc.js`·
+    `settings-tab-anim-map.js`)과 표시명 폴백 1곳을 교체
+  - `test/fixtures/codex-pets/tiny-atlas-png/spritesheet.png` 복원 — 캐릭터 아트가 아니라
+    절차적 생성 색상 견본 격자다(픽스처 README가 "generated test art"로 명시). 최초 반입 때
+    과잉 제외했던 것을 되돌린다
+
 이후 변경은 이 목록에 계속 추가한다.
 
 ## 4b. 배포 전 반드시 처리할 것

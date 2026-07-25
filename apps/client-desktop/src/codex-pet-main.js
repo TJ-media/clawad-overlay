@@ -110,7 +110,7 @@ function createCodexPetMain(options = {}) {
 
   function getActiveThemeId() {
     const activeTheme = typeof options.getActiveTheme === "function" ? options.getActiveTheme() : null;
-    return activeTheme ? activeTheme._id : (settingsController.get("theme") || "clawd");
+    return activeTheme ? activeTheme._id : (settingsController.get("theme") || "clawad");
   }
 
   function getDialogParent() {
@@ -267,7 +267,7 @@ function createCodexPetMain(options = {}) {
     }
 
     if (summaryHasActiveCodexPetOrphan(summary, activeId)) {
-      const result = await settingsController.applyCommand("setThemeSelection", { themeId: "clawd" });
+      const result = await settingsController.applyCommand("setThemeSelection", { themeId: "clawad" });
       if (!result || result.status !== "ok") {
         return {
           status: "error",
@@ -276,7 +276,7 @@ function createCodexPetMain(options = {}) {
         };
       }
       switchedToFallback = true;
-      const cleanup = syncThemes("clawd");
+      const cleanup = syncThemes("clawad");
       summary = mergeCodexPetSyncSummaries(summary, cleanup);
       lastSyncSummary = summary;
       if (cleanup.error) {
