@@ -1,3 +1,12 @@
+> ⚠️ **UPSTREAM DOCUMENT — NOT THE RULES FOR THIS REPOSITORY.**
+> 이 문서는 포크 원본 [clawd-on-desk](https://github.com/rullerzhou-afk/clawd-on-desk)의
+> 것으로, 포크 시점 참고자료로만 보존한다. **clawad-overlay의 규칙은 저장소 루트의
+> [`CLAUDE.md`](../../CLAUDE.md)다.**
+>
+> 아래 내용 중 일부는 이미 우리 상태와 어긋난다 — 내장 테마(Clawd/Calico/Cloudling)는
+> 라이선스 사유로 전량 제거했고, 빌드 명령은 사이드카 의존 제거로 달라졌다.
+> 자세한 차이는 [`FORK.md`](FORK.md) 참조.
+
 # AGENTS.md
 
 This file is the entry point for coding agents working in this repository. Keep it short and operational. Deep background lives in `docs/project/`.
