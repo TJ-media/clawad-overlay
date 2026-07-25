@@ -6,7 +6,7 @@ const path = require("node:path");
 
 const themeLoader = require("../src/theme-loader");
 themeLoader.init(path.join(__dirname, "..", "src"));
-const _defaultTheme = themeLoader.loadTheme("clawd");
+const _defaultTheme = themeLoader.loadTheme(themeLoader.DEFAULT_THEME_ID);
 
 function cloneTheme(theme) {
   return JSON.parse(JSON.stringify(theme));
@@ -845,6 +845,10 @@ describe("tick default idle visual", () => {
     return theme;
   }
 
+  // 테마의 follow 스프라이트는 states.idle[0]에서 파생된다 (src/state.js:409).
+  // 파일명을 하드코딩하면 테마를 교체할 때마다 깨지므로 테마에서 읽는다.
+  const FOLLOW_SVG = _defaultTheme.states.idle[0];
+
   it("pool play returns to the user-selected idle visual", () => {
     const theme = makeIdleTheme([{ file: "clawd-idle-look.svg", duration: 500 }]);
     ctx = makeIdleVisualCtx(theme, "clawd-idle-reading.svg");
@@ -873,12 +877,12 @@ describe("tick default idle visual", () => {
     const changes = idleStateChanges();
     assert.deepStrictEqual(
       changes.map(([, , svg]) => svg),
-      ["clawd-idle-look.svg", "clawd-idle-follow.svg"]
+      ["clawd-idle-look.svg", FOLLOW_SVG]
     );
   });
 
   it("unset choice leaves the pool untouched (follow sprite stays a valid pool entry)", () => {
-    const theme = makeIdleTheme([{ file: "clawd-idle-follow.svg", duration: 500 }]);
+    const theme = makeIdleTheme([{ file: FOLLOW_SVG, duration: 500 }]);
     ctx = makeIdleVisualCtx(theme);
     tickApi = loader.initTick(ctx);
     tickApi.startMainTick();
@@ -889,7 +893,7 @@ describe("tick default idle visual", () => {
     const changes = idleStateChanges();
     assert.deepStrictEqual(
       changes.map(([, , svg]) => svg),
-      ["clawd-idle-follow.svg", "clawd-idle-follow.svg"],
+      [FOLLOW_SVG, FOLLOW_SVG],
       "with no choice set a theme may play its follow sprite from the pool"
     );
   });
