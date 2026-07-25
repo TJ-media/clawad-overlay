@@ -4,7 +4,7 @@
   "description": "A desktop pet that reacts to your Claude Code sessions in real-time.",
   "main": "src/main.js",
   "scripts": {
-    "start": "node scripts/ensure-sidecar-binaries.js && node launch.js",
+    "start": "node launch.js",
     "build": "electron-builder --win",
     "build:win:x64": "electron-builder --win nsis:x64",
     "build:win:arm64": "electron-builder --win nsis:arm64",
@@ -16,13 +16,6 @@
     "verify:electron": "node scripts/verify-electron-install.js",
     "verify:sidecars": "node scripts/verify-sidecar-binaries.js",
     "postinstall": "node scripts/verify-electron-install.js --context postinstall",
-    "prebuild": "node scripts/verify-sidecar-binaries.js",
-    "prebuild:win:x64": "node scripts/verify-sidecar-binaries.js",
-    "prebuild:win:arm64": "node scripts/verify-sidecar-binaries.js",
-    "prebuild:win:all": "node scripts/verify-sidecar-binaries.js",
-    "prebuild:mac": "node scripts/verify-sidecar-binaries.js",
-    "prebuild:linux": "node scripts/verify-sidecar-binaries.js",
-    "prebuild:all": "node scripts/verify-sidecar-binaries.js",
     "test": "node test/run-tests.js",
     "create-theme": "node scripts/create-theme.js",
     "export-agent-icons": "node scripts/export-agent-icons.js",
@@ -169,10 +162,6 @@
       {
         "from": "assets/icon.ico",
         "to": "icon.ico"
-      },
-      {
-        "from": "bin/cc-connect-clawd",
-        "to": "sidecars/cc-connect-clawd"
       }
     ],
     "publish": [

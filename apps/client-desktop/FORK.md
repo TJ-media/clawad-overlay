@@ -57,8 +57,24 @@ AGPL이 요구하는 저작권 표시·변경 고지는 이 문서와 보존된 
 ## 4. 변경 내역
 
 - 2026-07-25 — upstream `v0.13.0` (`960f6f0`) 코드 반입. 위 §2 아트워크 전량 제외. (CLAW-89)
+- 2026-07-25 — `cc-connect-clawd` Go 사이드카 의존 제거. (CLAW-89)
+  - `package.json`: `prebuild*` 훅 7개 삭제, `start`에서 `ensure-sidecar-binaries.js` 제거,
+    `build.extraResources`의 `bin/cc-connect-clawd` 항목 삭제
+  - 사유: 사이드카는 텔레그램 승인 기능 전용이고 해당 기능은 기본 비활성(`enabled: false`)이다.
+    오버레이(펫 + 광고 렌더)와 무관한데도 빌드가 외부 GitHub 릴리스의 서명 없는
+    실행 바이너리 다운로드를 강제하고 있었다. 기능 코드 자체는 아직 남아 있다.
 
 이후 변경은 이 목록에 계속 추가한다.
+
+## 4b. 배포 전 반드시 처리할 것
+
+- **자동 업데이트가 upstream을 바라본다.** `src/updater.js`가
+  `rullerzhou-afk/clawd-on-desk`의 releases/latest를 확인하고,
+  `package.json`의 `build.publish`도 같은 저장소를 가리킨다.
+  이대로 배포하면 클로애드 클라이언트가 upstream 앱으로 자가 업데이트된다. (CLAW-92)
+- **미사용 기능 정리 검토**: 텔레그램/페이슈 원격 승인 브리지는 Claude Code의 권한
+  프롬프트를 외부에서 승인하는 경로다. 광고 클라이언트에 불필요한 공격면이므로
+  오버레이 범위 확정(CLAW-86) 시 제거 여부를 결정한다.
 
 ## 5. 경계
 
