@@ -8,7 +8,7 @@ const path = require("node:path");
 // Load default theme for test ctx
 const themeLoader = require("../src/theme-loader");
 themeLoader.init(path.join(__dirname, "..", "src"));
-const _defaultTheme = themeLoader.loadTheme("clawd");
+const _defaultTheme = themeLoader.loadTheme(themeLoader.DEFAULT_THEME_ID);
 const _calicoTheme = themeLoader.loadTheme("calico");
 const { createTranslator } = require("../src/i18n");
 const { makeSessionKey } = require("../src/session-key");
@@ -64,6 +64,34 @@ function makePidKill(alivePids) {
 function cloneTheme(theme) {
   return JSON.parse(JSON.stringify(theme));
 }
+
+// 아래 헬퍼들은 기대 스프라이트를 테마에서 파생시킨다. 파일명을 하드코딩하면
+// 테마를 교체할 때마다 테스트가 깨지고, 검증 대상이 "매핑 규칙"에서 "특정 아트"로
+// 흐려진다. tier는 minSessions가 가장 큰 항목이 우선한다 (CLAW-122).
+function tierFile(tiers, sessionCount) {
+  const match = [...tiers]
+    .sort((a, b) => b.minSessions - a.minSessions)
+    .find((tier) => sessionCount >= tier.minSessions);
+  assert.ok(match, `theme has no tier for ${sessionCount} session(s)`);
+  return match.file;
+}
+
+function workingTierFile(sessionCount) {
+  return tierFile(_defaultTheme.workingTiers, sessionCount);
+}
+
+function jugglingTierFile(sessionCount) {
+  return tierFile(_defaultTheme.jugglingTiers, sessionCount);
+}
+
+// follow 스프라이트는 states.idle[0]에서 파생된다 (src/state.js:409).
+const FOLLOW_SVG = _defaultTheme.states.idle[0];
+
+// 수면 시퀀스 전이 시간. 절대값(3000·1500 등)을 박아두면 테마가 바뀔 때 깨지고,
+// 검증 대상이 "전이 규칙"에서 "특정 숫자"로 흐려진다 (CLAW-122).
+const YAWN_MS = _defaultTheme.timings.yawnDuration;
+const COLLAPSE_MS = _defaultTheme.timings.collapseDuration;
+const WAKE_MS = _defaultTheme.timings.wakeDuration;
 
 /** Shorthand for updateSession with named params */
 function update(api, o = {}) {
@@ -526,37 +554,37 @@ describe("working sub-animations", () => {
   beforeEach(() => { api = require("../src/state")(makeCtx()); });
   afterEach(() => { api.cleanup(); });
 
-  it("1 working session → typing SVG", () => {
+  it("1 working session → tier 1 SVG", () => {
     api.sessions.set("s1", rawSession("working"));
-    assert.strictEqual(api.getSvgOverride("working"), "clawd-working-typing.svg");
+    assert.strictEqual(api.getSvgOverride("working"), workingTierFile(1));
   });
 
-  it("2 working sessions → headphones groove SVG", () => {
+  it("2 working sessions → tier 2 SVG", () => {
     api.sessions.set("s1", rawSession("working"));
     api.sessions.set("s2", rawSession("working"));
-    assert.strictEqual(api.getSvgOverride("working"), "clawd-headphones-groove.svg");
+    assert.strictEqual(api.getSvgOverride("working"), workingTierFile(2));
   });
 
-  it("3+ working sessions → building SVG", () => {
+  it("3+ working sessions → tier 3 SVG", () => {
     api.sessions.set("s1", rawSession("working"));
     api.sessions.set("s2", rawSession("thinking"));
     api.sessions.set("s3", rawSession("working"));
-    assert.strictEqual(api.getSvgOverride("working"), "clawd-working-building.svg");
+    assert.strictEqual(api.getSvgOverride("working"), workingTierFile(3));
   });
 
-  it("1 juggling session → headphones groove SVG", () => {
+  it("1 juggling session → juggling tier 1 SVG", () => {
     api.sessions.set("s1", rawSession("juggling"));
-    assert.strictEqual(api.getSvgOverride("juggling"), "clawd-headphones-groove.svg");
+    assert.strictEqual(api.getSvgOverride("juggling"), jugglingTierFile(1));
   });
 
-  it("2+ juggling sessions → three-ball juggling SVG", () => {
+  it("2+ juggling sessions → juggling tier 2 SVG", () => {
     api.sessions.set("s1", rawSession("juggling"));
     api.sessions.set("s2", rawSession("juggling"));
-    assert.strictEqual(api.getSvgOverride("juggling"), "clawd-working-juggling.svg");
+    assert.strictEqual(api.getSvgOverride("juggling"), jugglingTierFile(2));
   });
 
   it("idle → follow SVG", () => {
-    assert.strictEqual(api.getSvgOverride("idle"), "clawd-idle-follow.svg");
+    assert.strictEqual(api.getSvgOverride("idle"), FOLLOW_SVG);
   });
 });
 
@@ -664,39 +692,63 @@ describe("sleep sequence", () => {
     mock.timers.reset();
   });
 
-  it("yawning → 3s → dozing (non-DND)", () => {
+  it("yawning → yawnDuration → dozing (non-DND)", () => {
     api.applyState("yawning");
     assert.strictEqual(api.getCurrentState(), "yawning");
-    mock.timers.tick(3000);
+    mock.timers.tick(YAWN_MS);
     assert.strictEqual(api.getCurrentState(), "dozing");
   });
 
-  it("yawning → 3s → collapsing (DND)", () => {
+  it("yawning → yawnDuration → collapsing (DND)", () => {
     ctx.doNotDisturb = true;
     api.applyState("yawning");
-    mock.timers.tick(3000);
+    mock.timers.tick(YAWN_MS);
     assert.strictEqual(api.getCurrentState(), "collapsing");
   });
 
-  it("collapsing has no auto-return timer", () => {
+  // collapsing은 깨어 있는 상태로 스스로 되돌아가지 않는다. 다만 종착점은 아니고,
+  // collapseDuration이 양수면 sleeping으로 더 깊이 진행한다 (src/state.js:699-714).
+  // 원래 이 테스트는 "타이머가 없다"고만 단정했는데, 그건 collapseDuration이 0인
+  // 테마에서만 성립한다. 두 분기를 모두 검증한다 (CLAW-122).
+  it("collapsing advances to sleeping when the theme sets a collapse duration", () => {
+    assert.ok(COLLAPSE_MS > 0, "이 테스트는 collapseDuration이 양수인 테마를 전제한다");
     api.applyState("collapsing");
     assert.strictEqual(api.getCurrentState(), "collapsing");
-    // Tick a long time — should stay collapsing
-    mock.timers.tick(60000);
+    mock.timers.tick(COLLAPSE_MS);
+    assert.strictEqual(api.getCurrentState(), "sleeping");
+  });
+
+  it("collapsing never auto-returns to an awake state", () => {
+    api.applyState("collapsing");
+    mock.timers.tick(COLLAPSE_MS * 5);
+    assert.ok(
+      ["collapsing", "sleeping"].includes(api.getCurrentState()),
+      `collapsing must not wake on its own (was ${api.getCurrentState()})`
+    );
+  });
+
+  it("collapsing is terminal when the theme sets no collapse duration", () => {
+    const theme = cloneTheme(_defaultTheme);
+    theme.timings.collapseDuration = 0;
+    api.cleanup();
+    api = require("../src/state")(makeCtx({ theme }));
+
+    api.applyState("collapsing");
+    mock.timers.tick(COLLAPSE_MS * 5);
     assert.strictEqual(api.getCurrentState(), "collapsing");
   });
 
-  it("waking → 1.5s → resolveDisplayState (idle when no sessions)", () => {
+  it("waking → wakeDuration → resolveDisplayState (idle when no sessions)", () => {
     api.applyState("waking");
     assert.strictEqual(api.getCurrentState(), "waking");
-    mock.timers.tick(1500);
+    mock.timers.tick(WAKE_MS);
     assert.strictEqual(api.getCurrentState(), "idle");
   });
 
-  it("waking → 1.5s → restores working if active session exists", () => {
+  it("waking → wakeDuration → restores working if active session exists", () => {
     api.sessions.set("s1", rawSession("working"));
     api.applyState("waking");
-    mock.timers.tick(1500);
+    mock.timers.tick(WAKE_MS);
     assert.strictEqual(api.getCurrentState(), "working");
   });
 });
