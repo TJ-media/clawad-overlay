@@ -36,10 +36,16 @@ describe("state agent icons", () => {
   });
 
   // 번들 에이전트 아이콘(assets/icons/agents/*.png)을 실제로 읽어야 하는 테스트 5건은
-  // CLAW-122에서 제거했다. 해당 아이콘은 다른 AI 코딩 에이전트·기업의 로고이며
-  // upstream 아트워크와 함께 반입하지 않았다 (CLAW-89, FORK.md §2).
+  // CLAW-122에서 제거했다.
+  //
+  // 이유는 upstream 저작권이 아니다 — 그 아이콘은 upstream 소유가 아니고, upstream도
+  // `assets/LICENSE`에서 "Copyright is retained by the respective artists"라고 밝힌다.
+  // 걸리는 것은 **제3자 상표**다. Anthropic·OpenAI·Google 등 20개 벤더의 로고를
+  // 변형한 PNG이며, 오버레이의 펫이 광고 표시면이라 유료 광고 옆에 벤더 로고가 붙는
+  // 구도가 된다. 규칙 §7의 "공식 서비스 오인 금지"와 정면으로 만나므로 사용하지 않는다.
+  //
   // 아이콘 디렉터리에 의존하지 않는 아래 순수 로직 테스트만 유지한다.
-  // 오버레이가 에이전트 아이콘 기능을 계속 쓸지는 CLAW-86(범위 확정)에서 결정한다.
+  // (예외: `openclaw.svg`는 MIT라 저작자 표시만으로 사용 가능하다 — NOTICE.md 참조.)
 
   it("ignores local dotfiles and directories when checking runtime icon dimensions", () => {
     const entries = [
