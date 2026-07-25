@@ -1,0 +1,210 @@
+{
+  "schemaVersion": 1,
+  "name": "ClawAd",
+  "author": "TJmedia",
+  "version": "1.6.0",
+  "description": "ClawAd 픽셀 랍스터 마스코트 테마",
+  "viewBox": {
+    "x": -60,
+    "y": 0,
+    "width": 780,
+    "height": 760
+  },
+  "layout": {
+    "contentBox": {
+      "x": -45,
+      "y": 45,
+      "width": 665,
+      "height": 665
+    },
+    "centerX": 222,
+    "baselineY": 706,
+    "visibleHeightRatio": 0.58,
+    "baselineBottomRatio": 0.05
+  },
+  "rendering": {
+    "svgChannel": "object"
+  },
+  "eyeTracking": {
+    "enabled": true,
+    "states": [
+      "idle"
+    ],
+    "eyeRatioX": 0.5,
+    "eyeRatioY": 0.48,
+    "maxOffset": 16,
+    "bodyScale": 0.33,
+    "ids": {
+      "eyes": "eyes-js",
+      "body": "body-js"
+    }
+  },
+  "states": {
+    "idle": [
+      "clawad-idle.svg"
+    ],
+    "thinking": [
+      "clawad-thinking.svg"
+    ],
+    "working": [
+      "clawad-working.svg"
+    ],
+    "juggling": [
+      "clawad-juggling.svg"
+    ],
+    "attention": [
+      "clawad-attention.svg"
+    ],
+    "notification": [
+      "clawad-notification.svg"
+    ],
+    "error": [
+      "clawad-error.svg"
+    ],
+    "yawning": [
+      "clawad-yawning.svg"
+    ],
+    "dozing": [
+      "clawad-dozing.svg"
+    ],
+    "collapsing": [
+      "clawad-collapsing.svg"
+    ],
+    "sleeping": [
+      "clawad-sleeping.svg"
+    ],
+    "waking": [
+      "clawad-waking.svg"
+    ]
+  },
+  "workingTiers": [
+    {
+      "minSessions": 3,
+      "file": "clawad-building.svg"
+    },
+    {
+      "minSessions": 2,
+      "file": "clawad-juggling.svg"
+    },
+    {
+      "minSessions": 1,
+      "file": "clawad-working.svg"
+    }
+  ],
+  "jugglingTiers": [
+    {
+      "minSessions": 2,
+      "file": "clawad-conducting.svg"
+    },
+    {
+      "minSessions": 1,
+      "file": "clawad-juggling.svg"
+    }
+  ],
+  "reactions": {
+    "drag": {
+      "file": "clawad-react-drag.svg"
+    },
+    "clickLeft": {
+      "file": "clawad-react-poke.svg",
+      "duration": 2600
+    },
+    "double": {
+      "files": [
+        "clawad-react-double.svg"
+      ],
+      "duration": 3200
+    }
+  },
+  "sleepSequence": {
+    "mode": "full"
+  },
+  "timings": {
+    "minDisplay": {
+      "attention": 2700,
+      "error": 5000,
+      "notification": 2600,
+      "working": 1000,
+      "thinking": 1000
+    },
+    "autoReturn": {
+      "attention": 2700,
+      "error": 5200,
+      "notification": 2600
+    },
+    "yawnDuration": 3600,
+    "collapseDuration": 1600,
+    "wakeDuration": 2600,
+    "deepSleepTimeout": 600000,
+    "mouseIdleTimeout": 20000,
+    "mouseSleepTimeout": 60000
+  },
+  "hitBoxes": {
+    "default": {
+      "x": 60,
+      "y": 250,
+      "w": 380,
+      "h": 440
+    },
+    "sleeping": {
+      "x": 60,
+      "y": 380,
+      "w": 380,
+      "h": 310
+    }
+  },
+  "sleepingHitboxFiles": [
+    "clawad-yawning.svg",
+    "clawad-dozing.svg",
+    "clawad-collapsing.svg",
+    "clawad-sleeping.svg",
+    "clawad-waking.svg"
+  ],
+  "miniMode": {
+    "supported": true,
+    "viewBox": {
+      "x": -60,
+      "y": 0,
+      "width": 780,
+      "height": 760
+    },
+    "states": {
+      "mini-idle": [
+        "clawad-mini-idle.svg"
+      ],
+      "mini-enter": [
+        "clawad-mini-enter.svg"
+      ],
+      "mini-enter-sleep": [
+        "clawad-mini-enter-sleep.svg"
+      ],
+      "mini-crabwalk": [
+        "clawad-mini-crabwalk.svg"
+      ],
+      "mini-peek": [
+        "clawad-mini-peek.svg"
+      ],
+      "mini-alert": [
+        "clawad-mini-alert.svg"
+      ],
+      "mini-happy": [
+        "clawad-mini-happy.svg"
+      ],
+      "mini-sleep": [
+        "clawad-mini-sleep.svg"
+      ]
+    },
+    "timings": {
+      "minDisplay": {
+        "mini-alert": 2600,
+        "mini-happy": 3600,
+        "mini-peek": 1500
+      },
+      "autoReturn": {
+        "mini-alert": 2600,
+        "mini-happy": 3600,
+        "mini-peek": 1500
+      }
+    }
+  }
+}
