@@ -14,7 +14,6 @@ const {
   LOCK_FILE_NAME,
   acquireAdSurface,
   clawadDataDir,
-  isAdSurfaceEnabled,
   lockFilePath,
   ownsAdSurface,
   releaseAdSurface,
@@ -147,8 +146,5 @@ test("락 파일 위치는 CLAWAD_DATA를 우선하고 없으면 홈의 .clawad�
   assert.strictEqual(lockFilePath("/tmp/x"), path.join("/tmp/x", LOCK_FILE_NAME));
 });
 
-test("광고 서피스는 옵트인일 때만 활성된다 — 렌더러 없이 락을 쥐면 광고가 사라진다", () => {
-  assert.strictEqual(isAdSurfaceEnabled({}), false);
-  assert.strictEqual(isAdSurfaceEnabled({ CLAWAD_AD_SURFACE: "0" }), false);
-  assert.strictEqual(isAdSurfaceEnabled({ CLAWAD_AD_SURFACE: "1" }), true);
-});
+// 락을 쥐는 조건은 clawad-ad-window의 tick이 판단한다(광고를 그릴 수 있을 때만) — 여기서는
+// 락 자체의 획득·반환만 다룬다. 표시 조건 테스트는 clawad-ad-runtime.test.js에 있다.
