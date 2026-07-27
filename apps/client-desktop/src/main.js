@@ -129,7 +129,6 @@ const {
 } = require("./size-utils");
 const { keepOutOfTaskbar } = require("./taskbar");
 const { loadTrayNormalIcon, loadTrayFlashIcon } = require("./tray-flash-icon");
-const clawadSurfaceLock = require("./clawad-surface-lock");
 const createTopmostRuntime = require("./topmost-runtime");
 const { WIN_TOPMOST_LEVEL } = createTopmostRuntime;
 const createThemeFadeSequencer = require("./theme-fade-sequencer");
@@ -2046,6 +2045,17 @@ sendSessionHudI18n = _sessionHud.sendI18n;
 getSessionHudReservedOffset = _sessionHud.getHudReservedOffset;
 getSessionHudWindow = _sessionHud.getWindow;
 getQuotaRingWindow = _sessionHud.getQuotaRingWindow;
+
+// 클로애드 광고 표시 창 (CLAW-90). 펫 아래 한 줄. 표시 판단·스풀 기록은 clawad-ad-runtime이 한다.
+const _clawadAd = require("./clawad-ad-window")({
+  get win() { return win; },
+  get petHidden() { return petWindowRuntime.isPetHidden(); },
+  getPetWindowBounds,
+  getNearestWorkArea,
+  getTextScale: () => getTextScaleForPetWindows(),
+  guardAlwaysOnTop,
+  reapplyMacVisibility,
+});
 
 agentRuntime = createAgentRuntimeMain({
   getServer: () => _server,
@@ -4199,17 +4209,13 @@ if (!gotTheLock) {
       return;
     }
 
-    // 클로애드 광고 서피스 락 (CLAW-119). 락을 쥔 쪽만 광고를 표시하고 노출 이벤트를 만든다.
-    // 획득 실패는 정상 경로다 — 광고만 statusline이 계속 담당하고 펫은 그대로 동작한다.
-    // 광고 렌더(CLAW-90)가 없는 동안 락을 쥐면 statusline까지 광고를 멈춰 광고가 아예 사라지므로,
-    // 지금은 CLAWAD_AD_SURFACE=1 옵트인일 때만 획득한다. 렌더러가 붙으면 그 조건으로 바꾼다.
-    if (clawadSurfaceLock.isAdSurfaceEnabled()) {
-      try {
-        const acquired = clawadSurfaceLock.acquireAdSurface();
-        console.log(`ClawAd: ad surface lock ${acquired ? "acquired" : "held by another surface"}`);
-      } catch (err) {
-        console.warn("ClawAd: ad surface lock acquisition failed:", err && err.message);
-      }
+    // 클로애드 광고 표시 루프 (CLAW-90). 광고를 그릴 수 있을 때만 서피스 락을 쥐고,
+    // 락을 쥔 동안에만 표시한다 — 판단은 매 tick에서 clawad-ad-window가 한다.
+    // 광고 캐시가 없으면 아무 것도 하지 않는다: 펫만 뜨고 광고는 statusline이 계속 담당한다.
+    try {
+      _clawadAd.start();
+    } catch (err) {
+      console.warn("ClawAd: ad surface start failed:", err && err.message);
     }
 
     // Import system-backed settings (openAtLogin) into prefs on first run.
@@ -4332,8 +4338,9 @@ if (!gotTheLock) {
 
   app.on("before-quit", () => {
     isQuitting = true;
-    // 광고 서피스 락은 반드시 반환한다 — 남겨두면 다음 statusline이 stale 판정까지 광고를 멈춘다.
-    try { clawadSurfaceLock.releaseAdSurface(); } catch { /* 종료 경로를 막지 않는다 */ }
+    // 표시 중이던 광고 구간을 스풀에 남기고 서피스 락을 반환한다 — 남겨두면 다음 statusline이
+    // stale 판정 전까지 광고를 멈춘다.
+    try { _clawadAd.cleanup(); } catch { /* 종료 경로를 막지 않는다 */ }
     if (systemWakeRecovery) systemWakeRecovery.dispose();
     // #525: release the IVirtualDesktopManager COM ref and pay back our own
     // CoInitializeEx count (see win-cloak-recovery.js dispose()).

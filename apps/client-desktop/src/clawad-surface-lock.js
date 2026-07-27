@@ -41,16 +41,6 @@ function lockFilePath(dataDir) {
   return path.join(dataDir || clawadDataDir(), LOCK_FILE_NAME);
 }
 
-/**
- * 광고 서피스를 오버레이가 맡을 준비가 됐는가.
- * 락을 쥐면 statusline이 광고를 멈추므로, **렌더러가 없는 동안 락을 쥐면 광고가 아예 사라진다.**
- * 그래서 광고 렌더(CLAW-90)가 들어오기 전까지는 옵트인으로만 활성한다. QA·개발은
- * `CLAWAD_AD_SURFACE=1`로 켠다. CLAW-90에서 렌더러가 붙으면 그 조건으로 교체한다.
- */
-function isAdSurfaceEnabled(env = process.env) {
-  return env.CLAWAD_AD_SURFACE === "1";
-}
-
 function readLockFile(file) {
   try {
     // 다른 도구가 BOM을 붙여 쓸 수 있다. 파싱 전에 제거한다.
@@ -170,7 +160,6 @@ module.exports = {
   LOCK_OWNER,
   acquireAdSurface,
   clawadDataDir,
-  isAdSurfaceEnabled,
   lockFilePath,
   ownsAdSurface,
   releaseAdSurface,

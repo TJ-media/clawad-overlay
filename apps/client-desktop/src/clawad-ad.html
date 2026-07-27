@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'self'" />
+    <title>Claw-Ad</title>
+    <style>
+      /* 세션 HUD(session-hud.html)와 같은 팔레트·테두리·라운드를 쓴다 — 두 표면이 한 앱으로 읽히게. */
+      * { box-sizing: border-box; }
+
+      :root {
+        --panel-bg: rgba(255, 255, 255, 0.88);
+        --panel-border: rgba(0, 0, 0, 0.12);
+        --text: #242427;
+        --text-muted: #6b6b70;
+        --shadow: rgba(0, 0, 0, 0.16);
+        --badge-bg: rgba(0, 0, 0, 0.06);
+        --hover-bg: rgba(0, 0, 0, 0.05);
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --panel-bg: rgba(32, 32, 36, 0.88);
+          --panel-border: rgba(255, 255, 255, 0.12);
+          --text: #f4f4f5;
+          --text-muted: #a1a1aa;
+          --shadow: rgba(0, 0, 0, 0.34);
+          --badge-bg: rgba(255, 255, 255, 0.1);
+          --hover-bg: rgba(255, 255, 255, 0.08);
+        }
+      }
+
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background: transparent;
+        color: var(--text);
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Malgun Gothic", "Apple SD Gothic Neo", Roboto, Helvetica, Arial, sans-serif;
+        font-size: 12px;
+        -webkit-font-smoothing: antialiased;
+        user-select: none;
+        -webkit-user-select: none;
+      }
+
+      body { padding: 2px 3px 6px; }
+
+      #strip {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        width: 100%;
+        height: 100%;
+        padding: 0 8px;
+        border: 1px solid var(--panel-border);
+        border-radius: 8px;
+        background: var(--panel-bg);
+        box-shadow: 0 8px 18px -12px var(--shadow), 0 2px 4px rgba(0, 0, 0, 0.1);
+        opacity: 0;
+        transition: opacity 160ms ease-out, background 100ms ease;
+      }
+
+      #strip.visible { opacity: 1; }
+
+      /* 링크가 있는 광고만 클릭을 받는다. 없으면 창 전체가 클릭을 통과한다. */
+      #strip.linked { cursor: pointer; }
+      #strip.linked:hover { background: var(--hover-bg); }
+
+      /* [광고] 표기는 표시광고법 요건이다. 마크업에 고정해 광고 문구와 무관하게 항상 렌더된다.
+         제거·변경 금지 (clawad-overlay CLAUDE.md §4). */
+      #label {
+        flex: 0 0 auto;
+        padding: 1px 5px;
+        border-radius: 4px;
+        background: var(--badge-bg);
+        color: var(--text-muted);
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: -0.2px;
+      }
+
+      #text {
+        flex: 1 1 auto;
+        min-width: 0;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+
+      /* 브랜드는 광고주 식별이라 자르지 않는다. 길이가 부족하면 문구(#text)가 먼저 줄어든다. */
+      #brand {
+        flex: 0 0 auto;
+        max-width: 45%;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        color: var(--text-muted);
+      }
+
+      #brand:empty { display: none; }
+
+      /* 링크 표식. 클릭 가능한 광고에만 보인다. */
+      #open {
+        flex: 0 0 auto;
+        display: none;
+        color: var(--text-muted);
+        font-size: 11px;
+      }
+
+      #strip.linked #open { display: inline; }
+    </style>
+  </head>
+  <body>
+    <div id="strip">
+      <span id="label">[광고]</span>
+      <span id="text"></span>
+      <span id="brand"></span>
+      <span id="open" aria-hidden="true">↗</span>
+    </div>
+    <script src="clawad-ad-renderer.js"></script>
+  </body>
+</html>
