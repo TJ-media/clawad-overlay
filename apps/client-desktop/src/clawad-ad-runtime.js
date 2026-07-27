@@ -104,10 +104,26 @@ function safeText(value, maxLength) {
     .slice(0, maxLength);
 }
 
+/**
+ * 클릭 링크. https만 허용하고 제어문자가 섞인 값은 버린다.
+ * 클릭 자체는 기록·전송하지 않는다 — 클릭 정보 수집은 별도 동의가 있을 때만 가능하다(규칙 §6).
+ */
+function safeClickUrl(value) {
+  if (typeof value !== "string" || value.length === 0 || value.length > 2048) return null;
+  if (/[\u0000-\u001f\u007f]/.test(value)) return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
 function displayPayload(bundle, maxWidthPx) {
   return {
     text: safeText(bundle.ad.text, MAX_AD_TEXT_LENGTH) || "광고",
     brand: safeText(bundle.ad.brand, MAX_AD_BRAND_LENGTH),
+    clickUrl: safeClickUrl(bundle.clickUrl),
     maxWidthPx,
   };
 }
@@ -269,6 +285,7 @@ module.exports = {
   readBundles,
   readPolicyCache,
   readTriggerPointer,
+  safeClickUrl,
   safeText,
   writeSpoolEvent,
 };

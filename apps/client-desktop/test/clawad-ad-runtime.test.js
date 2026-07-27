@@ -13,6 +13,7 @@ const {
   isWorkActive,
   readPolicyCache,
   readTriggerPointer,
+  safeClickUrl,
   safeText,
 } = require("../src/clawad-ad-runtime");
 
@@ -246,6 +247,27 @@ test("광고 문구의 ANSI·제어문자를 지우고 길이를 제한한다", 
   assert.strictEqual(safeText(`a${String.fromCharCode(10)}b`, 50), "a b");
   assert.strictEqual(safeText("클라우드-네이티브 도구", 50), "클라우드-네이티브 도구");
   assert.strictEqual(safeText("가".repeat(200), 120).length, 120);
+});
+
+test("클릭 링크는 https만 통과시킨다", () => {
+  assert.strictEqual(safeClickUrl("https://clawad.whatsup.house/survey.html"), "https://clawad.whatsup.house/survey.html");
+  assert.strictEqual(safeClickUrl("http://example.com"), null, "http는 열지 않는다");
+  assert.strictEqual(safeClickUrl("javascript:alert(1)"), null);
+  assert.strictEqual(safeClickUrl("file:///C:/Windows/System32/cmd.exe"), null);
+  assert.strictEqual(safeClickUrl(`https://a.com/${String.fromCharCode(10)}`), null, "제어문자가 섞이면 버린다");
+  assert.strictEqual(safeClickUrl(`https://a.com/${"x".repeat(2100)}`), null, "너무 긴 URL은 버린다");
+  assert.strictEqual(safeClickUrl(undefined), null);
+});
+
+test("표시 payload에 검증된 링크가 실려 온다 — 없으면 null", () => {
+  const withLink = makeData({ bundles: [{ ...bundle("token.link"), clickUrl: "https://www.instagram.com/whatsup_house/" }] });
+  assert.strictEqual(runtimeWithRecorder(withLink).runtime.tick(Date.now()).clickUrl, "https://www.instagram.com/whatsup_house/");
+
+  const badLink = makeData({ bundles: [{ ...bundle("token.bad"), clickUrl: "http://insecure.example" }] });
+  assert.strictEqual(runtimeWithRecorder(badLink).runtime.tick(Date.now()).clickUrl, null);
+
+  const noLink = makeData({ bundles: [bundle("token.plain")] });
+  assert.strictEqual(runtimeWithRecorder(noLink).runtime.tick(Date.now()).clickUrl, null);
 });
 
 test("BOM이 붙은 정책 캐시·번들도 읽는다", () => {

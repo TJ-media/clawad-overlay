@@ -8,7 +8,7 @@
 // 클릭 광고는 별도 동의가 필요한 기능이라 이 창은 입력을 전혀 받지 않는다.
 
 const path = require("node:path");
-const { BrowserWindow } = require("electron");
+const { BrowserWindow, ipcMain, shell } = require("electron");
 const { createAdRuntime } = require("./clawad-ad-runtime");
 const clawadSurfaceLock = require("./clawad-surface-lock");
 const { keepOutOfTaskbar } = require("./taskbar");
@@ -19,8 +19,8 @@ const isLinux = process.platform === "linux";
 
 /** 표시 재평가 주기. 노출 빈도 정책이 아니라 "지금 무엇을 보여줄지" 다시 계산하는 간격이다. */
 const TICK_MS = 1000;
-/** 한 줄 캡슐 높이(논리 픽셀). 폭은 정책값 maxWidthPx에서 온다. */
-const STRIP_HEIGHT = 26;
+/** 한 줄 패널 높이(논리 픽셀). 세션 HUD처럼 body 여백을 두므로 그만큼 더 잡는다. 폭은 정책값 maxWidthPx. */
+const STRIP_HEIGHT = 34;
 /** 펫과 광고 줄 사이 여백. */
 const PET_GAP = 6;
 
@@ -35,6 +35,8 @@ module.exports = function initClawadAdWindow(ctx) {
   let timer = null;
   let lastPayload = null;
   let lastBounds = null;
+  let lastClickable = null;
+  let ipcBound = false;
 
   function getScale() {
     return typeof ctx.getTextScale === "function" ? ctx.getTextScale() : 1;
@@ -93,7 +95,7 @@ module.exports = function initClawadAdWindow(ctx) {
       },
     });
 
-    // 클릭은 전부 통과시킨다. 광고 창이 펫 조작이나 바탕화면 클릭을 가로채지 않는다.
+    // 기본은 클릭 통과다. 링크가 있는 광고를 표시할 때만 입력을 받는다(applyClickable).
     adWindow.setIgnoreMouseEvents(true, { forward: false });
     if (isWin) adWindow.setAlwaysOnTop(true, "screen-saver");
     if (typeof ctx.guardAlwaysOnTop === "function") ctx.guardAlwaysOnTop(adWindow);
@@ -112,7 +114,37 @@ module.exports = function initClawadAdWindow(ctx) {
 
   function send(payload) {
     if (!adWindow || adWindow.isDestroyed() || !ready) return;
-    adWindow.webContents.send("clawad-ad:update", payload);
+    // 렌더러에는 URL을 주지 않는다. 링크 여부만 알려주고 실제 열기는 메인이 한다.
+    adWindow.webContents.send("clawad-ad:update", payload
+      ? { text: payload.text, brand: payload.brand, linked: Boolean(payload.clickUrl) }
+      : null);
+  }
+
+  /** 링크가 있는 광고만 클릭을 받는다. 없으면 창이 입력을 통째로 통과시킨다. */
+  function applyClickable(win, clickUrl) {
+    const clickable = Boolean(clickUrl);
+    if (clickable === lastClickable) return;
+    win.setIgnoreMouseEvents(!clickable, { forward: false });
+    lastClickable = clickable;
+  }
+
+  /**
+   * 표시 중인 광고의 링크를 기본 브라우저로 연다.
+   * 열기만 하고 **클릭을 기록·전송하지 않는다** — 클릭 정보 수집은 별도 동의가 있을 때만 가능하다(규칙 §6).
+   * URL은 런타임이 https만 통과시킨 값이고, 렌더러가 보낸 값을 쓰지 않는다.
+   */
+  function openCurrentAd() {
+    const url = lastPayload && lastPayload.clickUrl;
+    if (!url) return false;
+    try {
+      shell.openExternal(url);
+      // URL은 남기지 않는다 — 클릭 대상 기록은 클릭 정보 수집에 해당한다.
+      console.log("ClawAd: opened the current ad link in the default browser");
+      return true;
+    } catch (err) {
+      console.warn("ClawAd: failed to open ad link:", err && err.message);
+      return false;
+    }
   }
 
   function applyBounds(win, maxWidthPx) {
@@ -130,6 +162,7 @@ module.exports = function initClawadAdWindow(ctx) {
     const win = ensureWindow();
     if (!win || win.isDestroyed()) return;
     applyBounds(win, payload.maxWidthPx);
+    applyClickable(win, payload.clickUrl);
     send(payload);
     if (!win.isVisible()) {
       win.showInactive();
@@ -142,6 +175,7 @@ module.exports = function initClawadAdWindow(ctx) {
     lastPayload = null;
     if (!adWindow || adWindow.isDestroyed()) return;
     send(null);
+    applyClickable(adWindow, null);
     if (adWindow.isVisible()) adWindow.hide();
   }
 
@@ -183,6 +217,15 @@ module.exports = function initClawadAdWindow(ctx) {
 
   function start() {
     if (timer) return;
+    if (!ipcBound) {
+      // 렌더러는 "열어달라"만 보낸다. 어떤 URL을 열지는 메인이 결정한다.
+      ipcMain.on("clawad-ad:open", (event) => {
+        if (!adWindow || adWindow.isDestroyed()) return;
+        if (event.sender !== adWindow.webContents) return;
+        openCurrentAd();
+      });
+      ipcBound = true;
+    }
     tick();
     timer = setInterval(() => {
       try { tick(); } catch (err) { console.warn("ClawAd: ad tick failed:", err && err.message); }
@@ -204,8 +247,13 @@ module.exports = function initClawadAdWindow(ctx) {
     }
     try { runtime.stop(); } catch { /* 종료 경로를 막지 않는다 */ }
     releaseSurface();
+    if (ipcBound) {
+      ipcMain.removeAllListeners("clawad-ad:open");
+      ipcBound = false;
+    }
     lastPayload = null;
     lastBounds = null;
+    lastClickable = null;
     if (adWindow && !adWindow.isDestroyed()) adWindow.destroy();
     adWindow = null;
     ready = false;
@@ -215,6 +263,7 @@ module.exports = function initClawadAdWindow(ctx) {
     canRender: (now) => runtime.canRender(now),
     cleanup,
     getWindow: () => adWindow,
+    openCurrentAd,
     reposition,
     start,
     tick,

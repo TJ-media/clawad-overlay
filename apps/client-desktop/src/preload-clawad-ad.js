@@ -1,5 +1,7 @@
 "use strict";
-// 오버레이 광고 창 preload (CLAW-90). 메인 → 렌더러 단방향 전달만 노출한다.
+// 클로애드 광고 창 preload (CLAW-90).
+// 메인 → 렌더러 광고 전달과, 렌더러 → 메인 "지금 광고 열기" 신호만 노출한다.
+// URL은 렌더러에 주지 않는다 — 메인이 갖고 있고 https만 열어준다.
 
 const { contextBridge, ipcRenderer } = require("electron");
 
@@ -17,4 +19,5 @@ contextBridge.exposeInMainWorld("clawadAdAPI", {
     listeners.add(cb);
     return () => listeners.delete(cb);
   },
+  openAd: () => ipcRenderer.send("clawad-ad:open"),
 });
