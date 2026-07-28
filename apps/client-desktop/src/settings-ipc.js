@@ -196,7 +196,7 @@ function registerSettingsIpc(options = {}) {
   }));
   const now = options.now || (() => Date.now());
   const aboutHeroSvgPath = options.aboutHeroSvgPath
-    || path.join(__dirname, "..", "assets", "svg", "clawd-about-hero.svg");
+    || path.join(__dirname, "..", "assets", "svg", "clawad-about-hero.svg");
   const disposers = [];
 
   function handle(channel, listener) {

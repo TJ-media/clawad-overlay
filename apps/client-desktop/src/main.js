@@ -2000,7 +2000,7 @@ function getTutorialDoneHeroSvg() {
   if (_tutorialDoneHeroSvgCache != null) return _tutorialDoneHeroSvgCache;
   try {
     _tutorialDoneHeroSvgCache = fs.readFileSync(
-      path.join(__dirname, "..", "assets", "svg", "clawd-about-hero.svg"),
+      path.join(__dirname, "..", "assets", "svg", "clawad-about-hero.svg"),
       "utf8"
     );
   } catch (err) {
@@ -3684,7 +3684,7 @@ registerSettingsIpc({
     _tutorial.open();
     return { status: "ok" };
   },
-  aboutHeroSvgPath: path.join(__dirname, "..", "assets", "svg", "clawd-about-hero.svg"),
+  aboutHeroSvgPath: path.join(__dirname, "..", "assets", "svg", "clawad-about-hero.svg"),
   getLanWsServer: () => _lanWss,
 });
 
