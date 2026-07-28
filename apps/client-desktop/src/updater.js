@@ -4,7 +4,13 @@ const path = require("path");
 const fs = require("fs");
 const electron = require("electron");
 
-const RELEASES_LATEST_URL = "https://github.com/rullerzhou-afk/clawd-on-desk/releases/latest";
+// 업데이트는 **우리 저장소에서만** 받는다 (CLAW-92).
+// 포크 원본을 가리키면 클로애드 클라이언트가 upstream 앱으로 자가 업데이트된다 —
+// 광고·정책·브랜딩이 없는 빌드로 사용자를 갈아타게 만드는 사고이므로 배포 전에 끊어야 한다.
+// 아직 릴리스를 올리지 않았으므로 조회는 실패하고, 그 경우 업데이터는 조용히 지나간다.
+const UPDATE_REPO_SLUG = "TJ-media/clawad-overlay";
+const RELEASES_LATEST_URL = `https://github.com/${UPDATE_REPO_SLUG}/releases/latest`;
+const UPDATE_USER_AGENT = "Claw-Ad";
 const DEPENDENCY_INSTALL_TIMEOUT_MS = 10 * 60 * 1000;
 
 function makeTranslate(ctx) {
@@ -478,9 +484,9 @@ function initUpdater(ctx, deps = {}) {
     return new Promise((resolve, reject) => {
       const req = httpsGet({
         hostname: "github.com",
-        path: "/rullerzhou-afk/clawd-on-desk/releases/latest",
+        path: `/${UPDATE_REPO_SLUG}/releases/latest`,
         headers: {
-          "User-Agent": "Clawd-on-Desk",
+          "User-Agent": UPDATE_USER_AGENT,
           Accept: "text/html,*/*",
         },
       }, (res) => {
@@ -511,11 +517,11 @@ function initUpdater(ctx, deps = {}) {
 
   function fetchLatestReleaseFromApi() {
     return new Promise((resolve, reject) => {
-      const headers = { "User-Agent": "Clawd-on-Desk" };
+      const headers = { "User-Agent": UPDATE_USER_AGENT };
       if (lastReleaseEtag) headers["If-None-Match"] = lastReleaseEtag;
       const req = httpsGet({
         hostname: "api.github.com",
-        path: "/repos/rullerzhou-afk/clawd-on-desk/releases/latest",
+        path: `/repos/${UPDATE_REPO_SLUG}/releases/latest`,
         headers,
       }, (res) => {
         // 304 Not Modified — drain and serve the cached release.

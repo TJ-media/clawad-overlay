@@ -106,10 +106,10 @@ AGPL이 요구하는 저작권 표시·변경 고지는 이 문서와 보존된 
 
 ## 4b. 배포 전 반드시 처리할 것
 
-- **자동 업데이트가 upstream을 바라본다.** `src/updater.js`가
-  `rullerzhou-afk/clawd-on-desk`의 releases/latest를 확인하고,
-  `package.json`의 `build.publish`도 같은 저장소를 가리킨다.
-  이대로 배포하면 클로애드 클라이언트가 upstream 앱으로 자가 업데이트된다. (CLAW-92)
+- ~~**자동 업데이트가 upstream을 바라본다.**~~ **해결 (2026-07-28, CLAW-92)** —
+  `src/updater.js`의 조회 대상을 `UPDATE_REPO_SLUG = "TJ-media/clawad-overlay"` 한 곳으로 모으고
+  `package.json`의 `build.publish`도 같은 저장소로 바꿨다. User-Agent도 `Claw-Ad`로 교체했다.
+  아직 릴리스가 없으므로 조회는 실패하고 업데이터는 조용히 지나간다 — 배포 채널 구성은 CLAW-92 본편.
 - **미사용 기능 정리 검토**: 텔레그램/페이슈 원격 승인 브리지는 Claude Code의 권한
   프롬프트를 외부에서 승인하는 경로다. 광고 클라이언트에 불필요한 공격면이므로
   오버레이 범위 확정(CLAW-86) 시 제거 여부를 결정한다.
