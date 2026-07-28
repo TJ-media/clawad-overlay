@@ -10,8 +10,9 @@ const { normalizeDiscordPresence, DEFAULT_CLAWD_DISCORD_APP_ID } = require("./di
 
 const OP = Object.freeze({ HANDSHAKE: 0, FRAME: 1, CLOSE: 2, PING: 3, PONG: 4 });
 
-// External URL works for large_image, so BYO users needn't upload an asset.
-const CLAWD_ICON_URL = "https://raw.githubusercontent.com/rullerzhou-afk/clawd-on-desk/main/assets/icon.png";
+// 포크 원본 저장소의 아이콘을 원격 참조하던 자리다. 그 아트워크는 AGPL 대상이 아니라
+// All Rights Reserved이므로 우리 제품 표시에 쓰지 않는다 (CLAW-94, FORK.md §2).
+// 자체 아이콘을 Discord 앱 자산으로 올린 뒤 다시 지정한다 — 그때까지 이미지 없이 동작한다.
 
 const COARSE_LABEL = Object.freeze({
   idle: "Idle",
@@ -49,7 +50,7 @@ function buildPresencePayload(session, privacy = {}) {
       ? "Custom agent"
       : ((session && session.agentName) || agentLabel(agentId)),
     state: COARSE_LABEL[coarse],
-    assets: { large_image: CLAWD_ICON_URL, large_text: "Clawd on Desk" },
+    assets: { large_text: "Claw-Ad" },
   };
   if (privacy.privacyShowProject && session && session.cwd) {
     // win32.basename splits on both \ and /, so a Windows cwd seen on a POSIX
@@ -364,7 +365,6 @@ function createDiscordPresenceBridge({ getConfig, log, createConnection, ipcPath
 
 module.exports = {
   OP,
-  CLAWD_ICON_URL,
   toCoarseState,
   buildPresencePayload,
   encodeFrame,

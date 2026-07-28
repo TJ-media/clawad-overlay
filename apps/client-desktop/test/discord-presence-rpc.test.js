@@ -45,7 +45,7 @@ test("toCoarseState collapses canonical session states into 4 coarse buckets", (
   assert.strictEqual(toCoarseState("mini-working"), "working"); // tolerate a leaked mini-* just in case
 });
 
-test("buildPresencePayload exposes ONLY agent + coarse state + icon by default", () => {
+test("buildPresencePayload exposes ONLY agent + coarse state by default", () => {
   const session = {
     agentId: "claude-code",
     state: "working",
@@ -58,7 +58,10 @@ test("buildPresencePayload exposes ONLY agent + coarse state + icon by default",
   assert.strictEqual(blob.includes("fix the thing"), false);  // session title never leaks
   assert.match(out.state, /working/i);            // coarse state present
   assert.ok(out.details);                         // agent label present
-  assert.ok(out.assets && out.assets.large_image); // icon present
+  // 포크 원본의 ARR 아이콘 원격 참조를 제거했다 (CLAW-94). 자체 Discord 자산을 올리기 전까지
+  // large_image 없이 라벨만 싣는다 — 남의 ARR 아트를 우리 표시에 쓰지 않는 것이 우선이다.
+  assert.strictEqual(out.assets.large_image, undefined);
+  assert.strictEqual(out.assets.large_text, "Claw-Ad");
 });
 
 test("buildPresencePayload keeps custom executable names out of public presence", () => {
