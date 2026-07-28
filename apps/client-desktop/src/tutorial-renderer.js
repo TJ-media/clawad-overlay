@@ -670,8 +670,6 @@
       platformStarter,
       featureCard("tutorialFeatureThemes", "Themes and mini mode",
         "tutorialFeatureThemesDesc", "Switch character themes, or tuck Clawd against a screen edge."),
-      featureCard("tutorialFeatureMobile", "Phone / Telegram approval",
-        "tutorialFeatureMobileDesc", "Handle permission requests from your phone when you are away."),
       featureCard("tutorialFeatureAuto", "Auto-approve requests",
         "tutorialFeatureAutoDesc", "Enable only when you fully trust the agent; every request is allowed automatically.", null, "advanced"),
     );

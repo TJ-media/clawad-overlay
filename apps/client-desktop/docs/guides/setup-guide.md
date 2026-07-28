@@ -96,23 +96,6 @@ The status line is visible and Claude Code provides a single user-level slot. Cl
 **Hermes Agent** — install Hermes from [hermes-agent.org](https://hermes-agent.org/) or [NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent), then install the Clawd integration from **Settings → Agents** when you want local Hermes tracking. Once the integration is installed and Hermes exists (`%LOCALAPPDATA%\hermes` on Windows or `~/.hermes` on macOS/Linux), Clawd copies its plugin into Hermes' managed plugin directory and enables it through `hermes plugins enable clawd-on-desk`. You can force a manual sync with `npm run install:hermes-plugin`, or remove Clawd's Hermes plugin with `npm run uninstall:hermes-plugin`.
 
 **Qoder** — hooks live in `~/.qoder/settings.json`. Install it from **Settings → Agents** when you want local Qoder tracking; after that Clawd keeps the hooks synced on launch while Qoder remains enabled. You can also run `npm run install:qoder-hooks` manually. Qoder is **state-only** in Phase 1: the hook always returns `{}`, and `PermissionRequest` / `PermissionDenied` are observed as passive notifications — Clawd never shows permission bubbles or answers permission decisions, so Qoder's native permission flow stays in control. Startup recovery watches only the Qoder CLI processes (`qodercli` / `qoder-cli`), so an already-open idle Qoder IDE is not treated as active agent work.
-## Telegram Approval
-
-Clawd can optionally mirror supported permission bubbles to a dedicated Telegram
-bot, so you can Allow or Deny from Telegram while the local desktop bubble
-remains available. See [telegram-approval.md](telegram-approval.md) for setup,
-token ownership, supported agents, and fallback behavior.
-
-## Feishu / Lark Approval
-
-Clawd can also mirror permission bubbles to a Feishu (China) or Lark
-(International) self-built app as an interactive card. Pick the platform in
-**Settings → Remote Approval → Feishu / Lark**; both are the same channel, so
-existing Feishu users keep their credentials and stay on Feishu by default. See
-[feishu-lark-remote-approval.md](feishu-lark-remote-approval.md) for the
-platform choice, permission scope, `open_id` / `union_id` / `user_id`
-differences, and card language.
-
 ## Remote SSH (Claude Code, Codex CLI & Copilot CLI)
 
 <img src="../../assets/screenshot-remote-ssh.png" width="560" alt="Remote SSH — permission bubble from Raspberry Pi">

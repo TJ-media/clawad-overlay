@@ -1324,12 +1324,9 @@ function buildRemoteApprovalPayload(permEntry) {
     basenameForDisplay((session && session.cwd) || permEntry.cwd || ""),
     80
   );
-  // Label is "Folder" (not "Session") on purpose, in every language: the pinned
-  // cc-connect-clawd sidecar redacts any "<sensitive_key>: <value>" pair it
-  // recognises against an English keyword list, and "session" is in that set —
-  // even though the value here is just the cwd basename, not a session id.
-  // Translated "Folder" labels don't match that English keyword list either,
-  // so they stay just as un-redacted as the English one.
+  // 라벨은 모든 언어에서 "Session"이 아니라 "Folder"다. 값이 세션 id가 아니라 작업 폴더
+  // 이름이므로 표시가 정확하다. (원래 이유는 제거된 사이드카의 비밀값 마스킹 규칙이
+  // "session" 키워드를 가려버리는 것을 피하려는 것이었다 — CLAW-129)
   const detail = [
     `${t("approvalDetailAgent")}: ${agentId}`,
     `${t("approvalDetailTool")}: ${toolName}`,
@@ -1357,20 +1354,12 @@ function normalizeRemoteApprovalDecision(decision) {
   return Number.isInteger(index) && index >= 0 ? { action, index } : null;
 }
 
-function getTelegramApprovalClient() {
-  if (typeof ctx.getTelegramApprovalClient === "function") {
-    try { return ctx.getTelegramApprovalClient(); } catch (err) {
-      permLog(`telegram remote approval client lookup failed: ${compactRemoteApprovalText(err && err.message ? err.message : err, 200)}`);
-      return null;
-    }
-  }
-  return ctx.telegramApprovalClient || null;
-}
-
+// 원격 승인 채널을 ctx가 주입하는 골격만 남아 있다. 클로애드는 내장 원격 채널을
+// 제공하지 않으므로(CLAW-129에서 텔레그램·페이슈 브리지 제거) 이 목록은 비어 있고
+// startRemoteApproval은 무동작이 된다. 골격을 남기는 이유는 포크 상류 병합 지점을
+// 보존하고, 승인 요청 처리 경로를 갈라놓지 않기 위해서다.
 function getRemoteApprovalClients() {
   const clients = [];
-  const telegramClient = getTelegramApprovalClient();
-  if (telegramClient) clients.push({ name: "telegram", client: telegramClient });
   if (typeof ctx.getRemoteApprovalClients === "function") {
     let extra = [];
     try {
@@ -1382,7 +1371,7 @@ function getRemoteApprovalClients() {
       if (!entry) continue;
       const name = typeof entry.name === "string" && entry.name ? entry.name : "remote";
       const client = entry.client || entry;
-      if (client && client !== telegramClient) clients.push({ name, client });
+      if (client) clients.push({ name, client });
     }
   }
   return clients.filter(({ client }) => {

@@ -97,21 +97,9 @@ const { dialog: electronDialog } = require("electron");
 const initPermission = require("./permission");
 const { isPassiveNotifyEntry } = require("./passive-notify-entry");
 const { registerPermissionIpc } = initPermission;
-const { createTelegramApprovalSidecar } = require("./telegram-approval-sidecar");
-const telegramApprovalSettings = require("./telegram-approval-settings");
 const discordPresenceSettings = require("./discord-presence-settings");
 const { createDiscordPresenceBridge } = require("./discord-presence-rpc");
 const { resolveAgentDisplayName } = require("./agent-display-name");
-const { FeishuApprovalClient } = require("./feishu-approval-client");
-const feishuApprovalSettings = require("./feishu-approval-settings");
-const {
-  buildTelegramApprovalStatus,
-  isNativeTelegramApprovalSelected,
-  buildTelegramStatusDiagnostic,
-  formatTelegramStatusDiagnostic,
-} = require("./telegram-approval-runtime-status");
-const { createTelegramMigrationController } = require("./telegram-migration-controller");
-const { createTelegramSidecarStatusBridge } = require("./telegram-sidecar-status-bridge");
 const initUpdateBubble = require("./update-bubble");
 const { registerUpdateBubbleIpc } = initUpdateBubble;
 const createSettingsAnimationOverridesMain = require("./settings-animation-overrides-main");
@@ -362,20 +350,7 @@ let agentRuntime = null;
 let systemWakeRecovery = null;
 let floatingWindowRuntime = null;
 let codexPetMain = null;
-let telegramApprovalSidecar = null;
-let telegramApprovalSyncPromise = Promise.resolve();
-let telegramApprovalConfigSignature = "";
-let telegramApprovalTokenRevision = 0;
-let _telegramMigrationController = null;
-let telegramNativeRunner = null;
-let telegramCompanion = null;
-let telegramDirectSend = null;
 let discordPresenceBridge = null;
-let suppressTelegramApprovalSidecarSync = 0;
-let feishuApprovalClient = null;
-let feishuApprovalSyncPromise = Promise.resolve();
-let feishuApprovalConfigSignature = "";
-let feishuApprovalSecretsRevision = 0;
 const shortcutHandlers = {
   togglePet: () => togglePetVisibility(),
 };
@@ -433,19 +408,6 @@ const _settingsController = createSettingsController({
       _state && typeof _state.getActiveSessionAliasKeys === "function"
         ? _state.getActiveSessionAliasKeys()
         : new Set(),
-    writeTelegramApprovalToken: (token) => writeTelegramApprovalToken(token),
-    getTelegramApprovalStatus: () => getTelegramApprovalStatus(),
-    getTelegramApprovalTokenInfo: () => getTelegramApprovalTokenInfo(),
-    sendTelegramApprovalTest: () => sendTelegramApprovalTest(),
-    writeFeishuApprovalSecrets: (secrets) => writeFeishuApprovalSecrets(secrets),
-    getFeishuApprovalStatus: () => getFeishuApprovalStatus(),
-    getFeishuApprovalSecretInfo: () => getFeishuApprovalSecretInfo(),
-    sendFeishuApprovalTest: () => sendFeishuApprovalTest(),
-    // Lazy getter so settings-actions can use the controller even though it's
-    // instantiated below (forward-reference).
-    get telegramMigration() {
-      return _telegramMigrationController;
-    },
     // Theme runtime is wired after theme-loader.init(); keep these closures
     // lazy so settings actions never capture a pre-init runtime reference.
     activateTheme: (id, variantId, overrideMap) => themeRuntime.activateTheme(id, variantId, overrideMap),
@@ -1508,13 +1470,6 @@ const _permCtx = {
   clearShortcutFailure: (actionId) => shortcutRuntime.clearFailure(actionId),
   repositionUpdateBubble: () => repositionUpdateBubble(),
   repositionSessionHud: () => repositionSessionHud(),
-  getTelegramApprovalClient: () => getTelegramApprovalClient(),
-  getRemoteApprovalClients: () => {
-    const client = getFeishuApprovalClient();
-    return client && typeof client.isConnected === "function" && client.isConnected()
-      ? [{ name: "feishu", client }]
-      : [];
-  },
   onPermissionResolved: (permEntry, options = {}) => {
     if (!_state || typeof _state.clearPermissionNotification !== "function") return;
     _state.clearPermissionNotification(permEntry && permEntry.sessionId, options);
@@ -1698,15 +1653,9 @@ const _stateCtx = {
     broadcastDashboardSessionSnapshot(snapshot);
     broadcastSessionHudSnapshot(snapshot);
     repositionFloatingBubbles();
-    // R1a: best-effort completion notifications. Must never throw or block the
-    // broadcast — the companion computes synchronously and fires sends async.
-    if (telegramCompanion) {
-      try { telegramCompanion.onSnapshot(snapshot); } catch {}
-    }
     if (discordPresenceBridge) {
       try { discordPresenceBridge.onSnapshot(snapshot); } catch {}
     }
-    if (_lanWss) { try { _lanWss.onSnapshot(); } catch {} }
   },
   // Phase 3b: 读 prefs.themeOverrides 判断某个 oneshot state 是否被用户禁用。
   // state.js gate 调这个做 early-return。不做白名单校验——settings-actions
@@ -2161,17 +2110,6 @@ const _serverCtx = {
 const _server = require("./server")(_serverCtx);
 const { startHttpServer, getHookServerPort } = _server;
 
-// ── LAN WebSocket bridge for PWA mobile clients (lazy-loaded) ──
-let _lanWss = null;
-if (_settingsController.get("mobilePreviewEnabled") === true) {
-  const { initMobilePreviewServer } = require("./network/mobile-preview-server");
-  _lanWss = initMobilePreviewServer({
-    sessions,
-    getSettingsSnapshot: () => _settingsController.getSnapshot(),
-    isEnabled: () => _settingsController.get("mobilePreviewEnabled") === true,
-  });
-}
-
 function updateLog(msg) {
   if (!updateDebugLog) return;
   const { rotatedAppend } = require("./log-rotate");
@@ -2198,824 +2136,6 @@ function focusLog(msg) {
   if (!focusDebugLog) return;
   const { rotatedAppend } = require("./log-rotate");
   rotatedAppend(focusDebugLog, `[${new Date().toISOString()}] ${msg}\n`);
-}
-
-function getTelegramApprovalClient() {
-  const controller = _telegramMigrationController;
-  if (controller && typeof controller.getSnapshot === "function") {
-    const snap = controller.getSnapshot() || {};
-    if (isNativeTelegramApprovalSelected(snap)) {
-      if (snap.state === "NATIVE_ACTIVE"
-        && telegramNativeRunner
-        && typeof telegramNativeRunner.isPolling === "function"
-        && telegramNativeRunner.isPolling()
-        && typeof telegramNativeRunner.requestApproval === "function") {
-        return telegramNativeRunner;
-      }
-      return null;
-    }
-  }
-  if (!telegramApprovalSidecar || typeof telegramApprovalSidecar.getClient !== "function") return null;
-  return telegramApprovalSidecar.getClient();
-}
-
-// R1a companion notifications are native-only: the legacy sidecar has no
-// sendNotification surface, so legacy users silently lack completion pings
-// (Settings copy must say so — tracked for a follow-up UI pass). Unlike
-// getTelegramApprovalClient this never falls back to the sidecar.
-function getTelegramCompanionClient() {
-  const controller = _telegramMigrationController;
-  if (controller && typeof controller.getSnapshot === "function") {
-    const snap = controller.getSnapshot() || {};
-    if (snap.state === "NATIVE_ACTIVE"
-      && telegramNativeRunner
-      && typeof telegramNativeRunner.sendNotification === "function") {
-      return telegramNativeRunner;
-    }
-  }
-  return null;
-}
-
-function getFeishuApprovalClient() {
-  return feishuApprovalClient && typeof feishuApprovalClient.isConnected === "function" && feishuApprovalClient.isConnected()
-    ? feishuApprovalClient
-    : null;
-}
-
-function getConfiguredFeishuApprovalClient() {
-  return feishuApprovalClient && typeof feishuApprovalClient.isEnabled === "function" && feishuApprovalClient.isEnabled()
-    ? feishuApprovalClient
-    : null;
-}
-
-function telegramApprovalLog(level, message, meta = {}) {
-  const parts = [`telegram approval ${level}: ${message}`];
-  if (meta && meta.text) parts.push(String(meta.text).trim());
-  if (meta && meta.error) parts.push(String(meta.error).trim());
-  for (const key of ["errorClass", "errorCode", "delayMs", "id", "sessionId", "messageId", "status", "reason", "fallbackReason"]) {
-    const value = meta && meta[key];
-    if (value !== undefined && value !== null && value !== "") {
-      parts.push(`${key}=${String(value).trim()}`);
-    }
-  }
-  permLog(parts.filter(Boolean).join(" | "));
-}
-
-function feishuApprovalLog(level, message, meta = {}) {
-  const parts = [`feishu approval ${level}: ${message}`];
-  if (meta && meta.text) parts.push(String(meta.text).trim());
-  if (meta && meta.error) parts.push(String(meta.error).trim());
-  for (const key of ["requestId", "messageId", "decision", "matched"]) {
-    const value = meta && meta[key];
-    if (value !== undefined && value !== null && value !== "") {
-      parts.push(`${key}=${String(value).trim()}`);
-    }
-  }
-  const config = getFeishuApprovalPrefs();
-  const secrets = getFeishuApprovalSecrets();
-  const redactionSecrets = feishuApprovalSettings.redactionSecretsForFeishuApproval(config, secrets);
-  for (const secret of redactionSecrets) {
-    if (!secret) continue;
-    for (let i = 0; i < parts.length; i += 1) {
-      parts[i] = String(parts[i]).split(String(secret)).join("<redacted>");
-    }
-  }
-  permLog(parts.filter(Boolean).join(" | "));
-}
-
-function getTelegramApprovalPrefs() {
-  return telegramApprovalSettings.normalizeTelegramApproval(_settingsController.get("tgApproval"));
-}
-
-function getFeishuApprovalPrefs() {
-  return feishuApprovalSettings.normalizeFeishuApproval(_settingsController.get("feishuApproval"));
-}
-
-function getTelegramMigrationPrefs() {
-  const raw = _settingsController.get("tgMigration");
-  return raw && typeof raw === "object" ? raw : {};
-}
-
-function readTelegramMigrationPrefsForController() {
-  const raw = { ...getTelegramMigrationPrefs() };
-  if (typeof raw.legacyEnabled !== "boolean") {
-    raw.legacyEnabled = getTelegramApprovalPrefs().enabled === true;
-  }
-  return raw;
-}
-
-function hasCompleteTelegramApprovalConfig(config, tokenInfo) {
-  return !!(
-    tokenInfo && tokenInfo.tokenStored === true
-    && config && config.allowedTgUserId
-    && config.targetSessionKey
-  );
-}
-
-function isTelegramLegacySidecarSyncAllowed() {
-  const migration = getTelegramMigrationPrefs();
-  if (migration.transport === "native" || migration.transport === "off") return false;
-  const controller = _telegramMigrationController;
-  if (controller && typeof controller.getSnapshot === "function") {
-    const snap = controller.getSnapshot() || {};
-    if (snap.state === "NATIVE_ACTIVE" || snap.state === "TESTING_NATIVE") return false;
-    if (snap.transport === "native" || snap.transport === "off") return false;
-  }
-  return true;
-}
-
-async function applySettingsUpdateOrThrow(key, value, label) {
-  const result = await Promise.resolve(_settingsController.applyUpdate(key, value));
-  if (!result || result.status !== "ok") {
-    throw new Error((result && result.message) || `${label || key} update failed`);
-  }
-  return result;
-}
-
-async function setTelegramApprovalEnabledForMigration(enabled) {
-  const current = getTelegramApprovalPrefs();
-  if (current.enabled === enabled) return;
-  suppressTelegramApprovalSidecarSync += 1;
-  try {
-    await applySettingsUpdateOrThrow("tgApproval", { ...current, enabled }, "tgApproval");
-  } finally {
-    suppressTelegramApprovalSidecarSync = Math.max(0, suppressTelegramApprovalSidecarSync - 1);
-  }
-}
-
-async function persistTelegramMigrationPatch(patch) {
-  const cur = getTelegramMigrationPrefs();
-  await applySettingsUpdateOrThrow("tgMigration", { ...cur, ...patch }, "tgMigration");
-  if (patch && patch.transport === "legacy") {
-    await setTelegramApprovalEnabledForMigration(true);
-  } else if (patch && (patch.transport === "native" || patch.transport === "off")) {
-    await setTelegramApprovalEnabledForMigration(false);
-  }
-}
-
-// Canonical paths only — no env-var override. The Settings "Save token" button,
-// the sidecar's bridge TOML, and tokenStatus all share this single location so
-// a malicious or accidental CLAWD_TG_BOT_TOKEN_FILE / CLAWD_BRIDGE_CONFIG can't
-// redirect the writer to an attacker-controlled path or split the writer/reader
-// view of where the token lives.
-function getTelegramApprovalPaths() {
-  const userDataDir = app.getPath("userData");
-  return {
-    userDataDir,
-    configPath: telegramApprovalSettings.defaultBridgeConfigPath(userDataDir),
-    tokenEnvFilePath: telegramApprovalSettings.defaultTokenEnvFilePath(userDataDir),
-  };
-}
-
-function getFeishuApprovalPaths() {
-  const userDataDir = app.getPath("userData");
-  return {
-    userDataDir,
-    secretsEnvFilePath: feishuApprovalSettings.defaultSecretsEnvFilePath(userDataDir),
-  };
-}
-
-function getFeishuApprovalSecrets() {
-  const paths = getFeishuApprovalPaths();
-  return feishuApprovalSettings.readSecretsEnvFile({
-    fs,
-    filePath: paths.secretsEnvFilePath,
-  });
-}
-
-function getFeishuApprovalSecretInfo() {
-  const paths = getFeishuApprovalPaths();
-  return feishuApprovalSettings.readMaskedSecrets({
-    fs,
-    filePath: paths.secretsEnvFilePath,
-  });
-}
-
-// Anything that changes the live connection must be in here. `platform` in
-// particular: switching Feishu <-> Lark has to tear the client down so the WS
-// reconnects to the new host and the cached REST client (and its token cache,
-// which is per-domain) is dropped with it. `lang` is deliberately absent — the
-// translator reads it dynamically, so a language switch must not bounce the
-// long connection.
-function buildFeishuApprovalSignature(config, paths, secrets) {
-  return JSON.stringify({
-    enabled: config.enabled === true,
-    platform: config.platform,
-    idType: config.idType,
-    approverId: config.approverId,
-    secretsEnvFilePath: paths.secretsEnvFilePath,
-    appId: secrets.appId,
-    appSecret: secrets.appSecret ? "set" : "",
-    verificationToken: secrets.verificationToken ? "set" : "",
-    encryptKey: secrets.encryptKey ? "set" : "",
-    connectionTimeoutSeconds: config.connectionTimeoutSeconds,
-    secretsRevision: feishuApprovalSecretsRevision,
-  });
-}
-
-function getFeishuApprovalStatus() {
-  const config = getFeishuApprovalPrefs();
-  const secrets = getFeishuApprovalSecrets();
-  const ready = feishuApprovalSettings.readiness(config, secrets);
-  const clientStatus = feishuApprovalClient && typeof feishuApprovalClient.getStatus === "function"
-    ? feishuApprovalClient.getStatus()
-    : { status: "stopped" };
-  return {
-    ...clientStatus,
-    enabled: config.enabled === true,
-    // The platform the runtime actually resolved, so the settings page renders
-    // the right brand/guide and a mismatch is visible while troubleshooting.
-    platform: config.platform,
-    configured: ready.ready === true,
-    reason: ready.reason || "",
-    message: clientStatus.message || ready.message || "",
-    connectionTimeoutSeconds: config.connectionTimeoutSeconds,
-    // Two different questions, deliberately two fields:
-    //   secretsStored     — is ANY secret on disk? (drives render gating only)
-    //   secretsConfigured — are the two REQUIRED ones both present?
-    // Conflating them lets a half-written env file (App ID but no App Secret,
-    // or just a Verification Token) render as a complete setup.
-    secretsStored: !!(secrets.appId || secrets.appSecret || secrets.verificationToken || secrets.encryptKey),
-    secretsConfigured: !!(secrets.appId && secrets.appSecret),
-  };
-}
-
-function broadcastFeishuApprovalStatus() {
-  broadcastSettingsWindow("remoteApproval:status-changed", {
-    channel: "feishu",
-    status: getFeishuApprovalStatus(),
-  });
-}
-
-function writeFeishuApprovalSecrets(secrets) {
-  const paths = getFeishuApprovalPaths();
-  const result = feishuApprovalSettings.writeSecretsEnvFile({
-    fs,
-    path,
-    filePath: paths.secretsEnvFilePath,
-    secrets,
-    platform: process.platform,
-  });
-  if (result && result.status === "ok") {
-    feishuApprovalSecretsRevision += 1;
-    queueFeishuApprovalSync("secrets");
-  }
-  return result;
-}
-
-async function startFeishuApprovalClient() {
-  const config = getFeishuApprovalPrefs();
-  const paths = getFeishuApprovalPaths();
-  const secrets = getFeishuApprovalSecrets();
-  const ready = feishuApprovalSettings.readiness(config, secrets);
-  if (!ready.ready) {
-    if (feishuApprovalClient) stopFeishuApprovalClient();
-    if (ready.reason !== "disabled") {
-      feishuApprovalLog("info", ready.reason || "not configured", {
-        error: ready.message || "",
-      });
-    }
-    return false;
-  }
-  const signature = buildFeishuApprovalSignature(config, paths, secrets);
-  if (feishuApprovalClient && feishuApprovalConfigSignature === signature) {
-    try {
-      await feishuApprovalClient.start();
-      return true;
-    } catch (err) {
-      feishuApprovalLog("warn", "start failed", { error: err && err.message ? err.message : String(err) });
-      return false;
-    }
-  }
-  stopFeishuApprovalClient();
-  feishuApprovalClient = new FeishuApprovalClient({
-    appId: secrets.appId,
-    appSecret: secrets.appSecret,
-    verificationToken: secrets.verificationToken,
-    encryptKey: secrets.encryptKey,
-    approverId: config.approverId,
-    idType: config.idType,
-    platform: config.platform,
-    connectionTimeoutSeconds: config.connectionTimeoutSeconds,
-    getLang: () => _settingsController.get("lang") || lang || "en",
-    log: feishuApprovalLog,
-    onStatusChange: () => broadcastFeishuApprovalStatus(),
-  });
-  feishuApprovalConfigSignature = signature;
-  try {
-    await feishuApprovalClient.start();
-    feishuApprovalLog("info", "starting");
-    return true;
-  } catch (err) {
-    feishuApprovalLog("warn", "start failed", { error: err && err.message ? err.message : String(err) });
-    return false;
-  }
-}
-
-function stopFeishuApprovalClient() {
-  const client = feishuApprovalClient;
-  feishuApprovalClient = null;
-  feishuApprovalConfigSignature = "";
-  if (client && typeof client.close === "function") {
-    try { client.close(); } catch (err) {
-      feishuApprovalLog("warn", "stop failed", { error: err && err.message ? err.message : String(err) });
-    }
-  }
-}
-
-async function syncFeishuApproval(reason = "settings") {
-  const config = getFeishuApprovalPrefs();
-  const secrets = getFeishuApprovalSecrets();
-  const ready = feishuApprovalSettings.readiness(config, secrets);
-  if (!ready.ready) {
-    stopFeishuApprovalClient();
-    return false;
-  }
-  const started = await startFeishuApprovalClient();
-  if (started) feishuApprovalLog("debug", `sync ${reason}`);
-  return started;
-}
-
-function queueFeishuApprovalSync(reason) {
-  feishuApprovalSyncPromise = feishuApprovalSyncPromise
-    .catch(() => {})
-    .then(() => syncFeishuApproval(reason));
-  return feishuApprovalSyncPromise;
-}
-
-// Brand-neutral: this channel now serves Feishu and Lark, and `message` is the
-// untranslated fallback shown when the renderer has no mapping for `code`.
-// Naming one brand here would tell half the users their working setup is wrong.
-function feishuApprovalUnavailableMessage(status) {
-  if (status && status.message) return status.message;
-  if (status && status.reason === "disabled") return "Remote approval is disabled";
-  if (status && status.reason === "missing-secret") return "App ID and App Secret are not configured";
-  if (status && status.reason === "invalid-config") return "Remote approval config is incomplete";
-  return "Remote approval client is not running";
-}
-
-// The `code` field lets the renderer map failures to localized, actionable
-// toasts; `message` stays as the untranslated fallback.
-function feishuApprovalUnavailableResult(status) {
-  return {
-    status: "error",
-    code: (status && status.reason) || "not-running",
-    message: feishuApprovalUnavailableMessage(status),
-  };
-}
-
-async function sendFeishuApprovalTest() {
-  const beforeStatus = getFeishuApprovalStatus();
-  if (beforeStatus.configured !== true) {
-    return feishuApprovalUnavailableResult(beforeStatus);
-  }
-  await queueFeishuApprovalSync("test");
-  const client = getConfiguredFeishuApprovalClient();
-  if (!client || typeof client.requestApproval !== "function") {
-    return feishuApprovalUnavailableResult(getFeishuApprovalStatus());
-  }
-  if (typeof client.waitUntilConnected === "function") {
-    const config = getFeishuApprovalPrefs();
-    const timeoutMs = Math.max(1, Number(config.connectionTimeoutSeconds) || 15) * 1000;
-    const connected = await client.waitUntilConnected(timeoutMs);
-    if (!connected) {
-      return { ...feishuApprovalUnavailableResult(getFeishuApprovalStatus()), code: "not-connected" };
-    }
-  }
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 60 * 1000);
-  try {
-    // Title/detail go through the same dictionary the client uses for the
-    // buttons, so the test card can no longer mix an English heading with
-    // Chinese buttons.
-    const decision = await client.requestApproval({
-      title: translate("feishuCardTestTitle"),
-      detail: translate("feishuCardTestDetail"),
-    }, { signal: controller.signal, rejectOnSendError: true });
-    if (decision === "allow" || decision === "deny") {
-      return { status: "ok", decision };
-    }
-    return { status: "error", code: "no-button-response", message: "Test card did not receive a button response" };
-  } catch (err) {
-    return { status: "error", code: "card-send-failed", message: err && err.message ? err.message : String(err) };
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-function getTelegramApprovalTokenStatus() {
-  const paths = getTelegramApprovalPaths();
-  return telegramApprovalSettings.tokenStatus({
-    fs,
-    filePath: paths.tokenEnvFilePath,
-  });
-}
-
-function getTelegramApprovalTokenInfo() {
-  const paths = getTelegramApprovalPaths();
-  const status = telegramApprovalSettings.tokenStatus({
-    fs,
-    filePath: paths.tokenEnvFilePath,
-  });
-  if (!status.tokenStored) return { configured: false, masked: "" };
-  return {
-    configured: true,
-    masked: telegramApprovalSettings.readMaskedBotToken({
-      fs,
-      filePath: paths.tokenEnvFilePath,
-    }),
-  };
-}
-
-function buildTelegramApprovalSignature(config, paths, tokenStatus) {
-  return JSON.stringify({
-    enabled: config.enabled === true,
-    allowedTgUserId: config.allowedTgUserId,
-    targetSessionKey: config.targetSessionKey,
-    configPath: paths.configPath,
-    tokenEnvFilePath: paths.tokenEnvFilePath,
-    tokenStored: tokenStatus.tokenStored === true,
-    tokenFileMtimeMs: tokenStatus.tokenFileMtimeMs || 0,
-    tokenRevision: telegramApprovalTokenRevision,
-  });
-}
-
-function getTelegramApprovalStatus() {
-  const config = getTelegramApprovalPrefs();
-  const token = getTelegramApprovalTokenStatus();
-  const sidecarStatus = telegramApprovalSidecar && typeof telegramApprovalSidecar.getStatus === "function"
-    ? telegramApprovalSidecar.getStatus()
-    : { status: "stopped" };
-  const migrationSnapshot = _telegramMigrationController && typeof _telegramMigrationController.getSnapshot === "function"
-    ? _telegramMigrationController.getSnapshot()
-    : null;
-  const nativePolling = telegramNativeRunner
-    && typeof telegramNativeRunner.isPolling === "function"
-    && telegramNativeRunner.isPolling();
-  return buildTelegramApprovalStatus({
-    config,
-    token,
-    sidecarStatus,
-    migrationSnapshot,
-    nativePolling,
-  });
-}
-
-function getPendingTelegramApprovalCount() {
-  return pendingPermissions.filter((entry) => entry && !isPassiveNotifyEntry(entry)).length;
-}
-
-function getTelegramNativeRunnerStatus() {
-  if (telegramNativeRunner && typeof telegramNativeRunner.getStatus === "function") {
-    try { return telegramNativeRunner.getStatus(); } catch {}
-  }
-  return {
-    polling: !!(telegramNativeRunner
-      && typeof telegramNativeRunner.isPolling === "function"
-      && telegramNativeRunner.isPolling()),
-    pendingApprovalCount: telegramNativeRunner && telegramNativeRunner._pendingApprovals
-      ? telegramNativeRunner._pendingApprovals.size
-      : 0,
-    lastError: null,
-  };
-}
-
-function buildTelegramStatusCommandText(options = {}) {
-  const config = getTelegramApprovalPrefs();
-  const token = getTelegramApprovalTokenStatus();
-  const sidecarStatus = telegramApprovalSidecar && typeof telegramApprovalSidecar.getStatus === "function"
-    ? telegramApprovalSidecar.getStatus()
-    : { status: "stopped" };
-  const migrationSnapshot = _telegramMigrationController && typeof _telegramMigrationController.getSnapshot === "function"
-    ? _telegramMigrationController.getSnapshot()
-    : null;
-  const nativeRunnerStatus = getTelegramNativeRunnerStatus();
-  const nativePolling = nativeRunnerStatus && nativeRunnerStatus.polling === true;
-  const approvalStatus = buildTelegramApprovalStatus({
-    config,
-    token,
-    sidecarStatus,
-    migrationSnapshot,
-    nativePolling,
-  });
-  const sessionSnapshot = _state && typeof _state.buildSessionSnapshot === "function"
-    ? _state.buildSessionSnapshot()
-    : null;
-  const diagnostic = buildTelegramStatusDiagnostic({
-    config,
-    token,
-    approvalStatus,
-    migrationSnapshot,
-    nativeRunnerStatus,
-    nativePolling,
-    pendingApprovalCount: getPendingTelegramApprovalCount(),
-    sessionSnapshot,
-    now: Date.now(),
-    all: options && options.all === true,
-  });
-  return formatTelegramStatusDiagnostic(diagnostic, {
-    all: options && options.all === true,
-    lang: _settingsController.get("lang") || lang || "en",
-  });
-}
-
-function handleTelegramNativeCommand({ command, args } = {}) {
-  if (command !== "status") return null;
-  return buildTelegramStatusCommandText({ all: true });
-}
-
-function writeTelegramApprovalToken(token) {
-  const paths = getTelegramApprovalPaths();
-  const result = telegramApprovalSettings.writeTokenEnvFile({
-    fs,
-    path,
-    filePath: paths.tokenEnvFilePath,
-    token,
-    platform: process.platform,
-  });
-  if (result && result.status === "ok") {
-    telegramApprovalTokenRevision += 1;
-    queueTelegramApprovalSidecarSync("token");
-  }
-  return result;
-}
-
-// Bridge a freshly-created legacy sidecar's status-changed stream into the
-// migration controller. A new bridge per instance keeps everReady/dedupe state
-// scoped to that process; the controller is referenced lazily because it may be
-// created after the first sidecar (init drives the first start).
-function attachTelegramSidecarStatusBridge(sidecar) {
-  if (!sidecar || typeof sidecar.on !== "function") return;
-  const bridge = createTelegramSidecarStatusBridge({
-    getSnapshot: () => (_telegramMigrationController
-      && typeof _telegramMigrationController.getSnapshot === "function"
-      ? _telegramMigrationController.getSnapshot()
-      : null),
-    dispatch: (event) => (_telegramMigrationController
-      && typeof _telegramMigrationController.dispatch === "function"
-      ? _telegramMigrationController.dispatch(event)
-      : Promise.resolve()),
-    log: telegramApprovalLog,
-  });
-  sidecar.on("status-changed", (status) => bridge.onStatusChanged(status));
-}
-
-async function startTelegramApprovalSidecar() {
-  const config = getTelegramApprovalPrefs();
-  const paths = getTelegramApprovalPaths();
-  const token = getTelegramApprovalTokenStatus();
-  const ready = telegramApprovalSettings.readiness(config, token);
-  if (!ready.ready) {
-    if (ready.reason !== "disabled") {
-      telegramApprovalLog("info", ready.reason || "not configured", {
-        error: ready.message || "",
-      });
-    }
-    return false;
-  }
-  const configWrite = telegramApprovalSettings.writeBridgeConfigFile({
-    fs,
-    path,
-    filePath: paths.configPath,
-    config,
-  });
-  if (!configWrite || configWrite.status !== "ok") {
-    telegramApprovalLog("warn", "config write failed", {
-      error: configWrite && configWrite.message,
-    });
-    return false;
-  }
-  const signature = buildTelegramApprovalSignature(config, paths, token);
-  if (telegramApprovalSidecar && telegramApprovalConfigSignature === signature) {
-    const sidecar = telegramApprovalSidecar;
-    if (typeof sidecar.isRunning !== "function" || !sidecar.isRunning()) {
-      try {
-        await sidecar.start();
-        if (telegramApprovalSidecar === sidecar) telegramApprovalLog("info", "running");
-      } catch (err) {
-        telegramApprovalLog("warn", "start failed", {
-          error: err && err.message ? err.message : String(err),
-        });
-        return false;
-      }
-    }
-    return telegramApprovalSidecar === sidecar;
-  }
-  if (telegramApprovalSidecar) await stopTelegramApprovalSidecar();
-  // The bot token only ever lives at userData/telegram-approval.env on disk.
-  // The sidecar reads it from there directly — Clawd's main process must never
-  // pipe a token value through process.env or child env, so there is no
-  // botToken option here and no CLAWD_TG_BOT_TOKEN read from process.env.
-  telegramApprovalSidecar = createTelegramApprovalSidecar({
-    baseEnv: process.env,
-    env: process.env,
-    userDataDir: paths.userDataDir,
-    resourcesPath: process.resourcesPath,
-    isPackaged: app.isPackaged,
-    configPath: paths.configPath,
-    tokenEnvFilePath: paths.tokenEnvFilePath,
-    redactionSecrets: telegramApprovalSettings.redactionSecretsForTelegramApproval(config),
-    log: telegramApprovalLog,
-  });
-  attachTelegramSidecarStatusBridge(telegramApprovalSidecar);
-  telegramApprovalConfigSignature = signature;
-  const sidecar = telegramApprovalSidecar;
-  try {
-    await sidecar.start();
-    if (telegramApprovalSidecar === sidecar) {
-      telegramApprovalLog("info", "running");
-      return true;
-    }
-  } catch (err) {
-    telegramApprovalLog("warn", "start failed", {
-      error: err && err.message ? err.message : String(err),
-    });
-  }
-  return false;
-}
-
-async function initTelegramMigrationController() {
-  if (_telegramMigrationController) return _telegramMigrationController;
-  const paths = getTelegramApprovalPaths();
-
-  // Sidecar handle: forwards to the existing async start/stop functions so
-  // there is exactly one sidecar lifecycle in the process.
-  const sidecarHandle = {
-    isRunning: () => !!(telegramApprovalSidecar && telegramApprovalSidecar.isRunning && telegramApprovalSidecar.isRunning()),
-    start: async () => {
-      await setTelegramApprovalEnabledForMigration(true);
-      const started = await startTelegramApprovalSidecar();
-      if (!started) {
-        const err = new Error("Telegram approval sidecar did not start");
-        err.code = "SIDECAR_START_FAILED";
-        throw err;
-      }
-      return true;
-    },
-    stop: () => stopTelegramApprovalSidecar(),
-  };
-
-  // Native handle: spike-level real implementation. Token comes from the same
-  // env file the sidecar uses; production transport closes over the token.
-  const { envFileTokenStore } = require("./telegram-token-store");
-  const {
-    createClipboardFallbackDeliveryAdapter,
-    createTelegramDirectSend,
-    createWindowsPasteOnlyDeliveryAdapter,
-  } = require("./telegram-direct-send");
-  const { createTelegramNativeRunner } = require("./telegram-native-runner");
-  const { createTelegramFetchTransport } = require("./telegram-fetch-transport");
-  const tokenStore = envFileTokenStore({ filePath: paths.tokenEnvFilePath });
-  telegramDirectSend = createTelegramDirectSend({
-    getSessionSnapshot: () => _state && typeof _state.buildSessionSnapshot === "function"
-      ? _state.buildSessionSnapshot()
-      : { sessions: [] },
-    getPendingPermissions: () => pendingPermissions,
-    focusSession: (sessionId, options) => focusDashboardSession(sessionId, options),
-    deliveryAdapter: createWindowsPasteOnlyDeliveryAdapter({
-      clipboard,
-      restoreClipboardOnSuccess: true,
-    }),
-    fallbackAdapter: createClipboardFallbackDeliveryAdapter({ clipboard }),
-    isEnabled: () => {
-      const snap = _telegramMigrationController && typeof _telegramMigrationController.getSnapshot === "function"
-        ? _telegramMigrationController.getSnapshot()
-        : null;
-      return !!(snap && snap.state === "NATIVE_ACTIVE"
-        && getTelegramApprovalPrefs().r3DirectSendEnabled === true);
-    },
-    osPlatform: process.platform,
-    getLang: () => lang,
-    log: telegramApprovalLog,
-  });
-  const nativeRunner = createTelegramNativeRunner({
-    tokenStore,
-    // issue #359: route the bot's HTTP through Electron's Chromium net stack so
-    // it follows the OS system proxy (and PAC/SOCKS), instead of Node's global
-    // fetch which ignores system/env proxy. Dedicated in-memory session.
-    transport: createTelegramFetchTransport({
-      tokenStore,
-      sessionFactory: () => require("electron").session.fromPartition("clawd-telegram", { cache: false }),
-      log: telegramApprovalLog,
-    }),
-    getDispatch: () => _telegramMigrationController && _telegramMigrationController.dispatch,
-    getLang: () => lang,
-    getChatId: () => {
-      const cfg = getTelegramApprovalPrefs();
-      const key = cfg && cfg.targetSessionKey;
-      // targetSessionKey is "telegram:<chat>:..." — extract chat id.
-      const m = typeof key === "string" ? key.match(/^telegram:(-?\d+)/) : null;
-      return m ? m[1] : "";
-    },
-    getAllowedUserId: () => {
-      const cfg = getTelegramApprovalPrefs();
-      return (cfg && cfg.allowedTgUserId) || "";
-    },
-    isCommandEnabled: () => {
-      const snap = _telegramMigrationController && typeof _telegramMigrationController.getSnapshot === "function"
-        ? _telegramMigrationController.getSnapshot()
-        : null;
-      return !!(snap && snap.state === "NATIVE_ACTIVE");
-    },
-    onCommand: (payload) => handleTelegramNativeCommand(payload),
-    isTextMessageEnabled: () => {
-      const snap = _telegramMigrationController && typeof _telegramMigrationController.getSnapshot === "function"
-        ? _telegramMigrationController.getSnapshot()
-        : null;
-      return !!(snap && snap.state === "NATIVE_ACTIVE"
-        && getTelegramApprovalPrefs().r3DirectSendEnabled === true);
-    },
-    onTextMessage: (payload) => telegramDirectSend && telegramDirectSend.handleTextMessage(payload),
-    getLang: () => _settingsController.get("lang") || lang || "en",
-    log: telegramApprovalLog,
-  });
-  telegramNativeRunner = nativeRunner;
-
-  // R1a: completion notifications ride the existing snapshot fanout. The
-  // companion holds its own dedupe state (the snapshot carries no prev) and
-  // only sends while native is the active owner + the user left the toggle on.
-  const { createTelegramCompanion } = require("./telegram-companion");
-  telegramCompanion = createTelegramCompanion({
-    getClient: () => getTelegramCompanionClient(),
-    getLang: () => _settingsController.get("lang") || lang || "en",
-    getCompletionOutputMode: () => getTelegramApprovalPrefs().completionOutputMode || "off",
-    getNotifyOnComplete: () => getTelegramApprovalPrefs().notifyOnComplete === true,
-    // Native-active client present. The companion still advances its dedupe map
-    // while native is inactive, and internally decides whether to send a bare
-    // ping or require assistant output based on tgApproval prefs.
-    isEnabled: () => !!getTelegramCompanionClient(),
-    onNotificationSent: ({ entry, messageId }) => {
-      if (telegramDirectSend && typeof telegramDirectSend.registerCompletionNotification === "function") {
-        telegramDirectSend.registerCompletionNotification({
-          messageId,
-          sessionId: entry && entry.id,
-        });
-      }
-    },
-    log: telegramApprovalLog,
-  });
-
-  _telegramMigrationController = createTelegramMigrationController({
-    sidecar: sidecarHandle,
-    native: nativeRunner,
-    readPrefs: () => readTelegramMigrationPrefsForController(),
-    writePrefs: (patch) => persistTelegramMigrationPatch(patch),
-    readFiles: () => {
-      const cfg = getTelegramApprovalPrefs();
-      const tokenInfo = getTelegramApprovalTokenStatus();
-      const hasTokenFile = !!(tokenInfo && tokenInfo.tokenStored);
-      const configComplete = hasCompleteTelegramApprovalConfig(cfg, tokenInfo);
-      return {
-        hasLegacyEnvFile: hasTokenFile,
-        legacyConfigComplete: configComplete,
-        nativeConfigComplete: configComplete,
-      };
-    },
-    log: telegramApprovalLog,
-  });
-
-  await _telegramMigrationController.init();
-  return _telegramMigrationController;
-}
-
-function stopTelegramApprovalSidecar() {
-  const sidecar = telegramApprovalSidecar;
-  telegramApprovalSidecar = null;
-  telegramApprovalConfigSignature = "";
-  if (!sidecar || typeof sidecar.stop !== "function") return Promise.resolve();
-  return sidecar.stop().catch((err) => telegramApprovalLog("warn", "stop failed", {
-    error: err && err.message ? err.message : String(err),
-  }));
-}
-
-async function syncTelegramApprovalSidecar(reason = "settings") {
-  if (!isTelegramLegacySidecarSyncAllowed()) {
-    if (telegramApprovalSidecar) await stopTelegramApprovalSidecar();
-    telegramApprovalLog("debug", `sync ${reason} skipped by migration transport`);
-    return false;
-  }
-  const config = getTelegramApprovalPrefs();
-  const paths = getTelegramApprovalPaths();
-  const token = getTelegramApprovalTokenStatus();
-  const ready = telegramApprovalSettings.readiness(config, token);
-  if (!ready.ready) {
-    if (telegramApprovalSidecar) await stopTelegramApprovalSidecar();
-    return false;
-  }
-  const nextSignature = buildTelegramApprovalSignature(config, paths, token);
-  if (telegramApprovalSidecar && telegramApprovalConfigSignature !== nextSignature) {
-    await stopTelegramApprovalSidecar();
-  }
-  const started = await startTelegramApprovalSidecar();
-  if (started) telegramApprovalLog("debug", `sync ${reason}`);
-  return started;
-}
-
-function queueTelegramApprovalSidecarSync(reason) {
-  telegramApprovalSyncPromise = telegramApprovalSyncPromise
-    .catch(() => {})
-    .then(() => syncTelegramApprovalSidecar(reason));
-  return telegramApprovalSyncPromise;
 }
 
 // In-process IPC bridge fed by the session-snapshot subscription.
@@ -3050,48 +2170,6 @@ function syncDiscordPresence(reason = "settings") {
   }
   try { sessionLog(`[discord-presence] sync ${reason}: on`); } catch {}
   return startDiscordPresence();
-}
-
-function telegramApprovalUnavailableMessage(status) {
-  if (status && status.message) return status.message;
-  if (status && status.reason === "disabled") return translate("telegramApprovalDisabledMessage");
-  if (status && status.reason === "missing-token") return translate("telegramApprovalMissingTokenMessage");
-  if (status && status.reason === "invalid-config") return translate("telegramApprovalIncompleteConfigMessage");
-  if (status && status.reason === "native-inactive") return translate("telegramApprovalNativeInactiveMessage");
-  if (status && status.reason === "native-testing") return translate("telegramApprovalNativeTestingMessage");
-  if (status && status.transport === "native") return translate("telegramApprovalNativeInactiveMessage");
-  return translate("telegramApprovalSidecarNotRunningMessage");
-}
-
-async function sendTelegramApprovalTest() {
-  const beforeStatus = getTelegramApprovalStatus();
-  if (beforeStatus.configured !== true) {
-    return { status: "error", message: telegramApprovalUnavailableMessage(beforeStatus) };
-  }
-  if (!(beforeStatus && beforeStatus.transport === "native")) {
-    await queueTelegramApprovalSidecarSync("test");
-  }
-  const client = getTelegramApprovalClient();
-  if (!client || typeof client.requestApproval !== "function") {
-    return { status: "error", message: telegramApprovalUnavailableMessage(getTelegramApprovalStatus()) };
-  }
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 60 * 1000);
-  try {
-    const decision = await client.requestApproval({
-      title: translate("telegramSettingsTestTitle"),
-      detail: translate("telegramSettingsTestDetail"),
-    }, { signal: controller.signal });
-    if (decision === "allow" || decision === "deny") {
-      return { status: "ok", decision };
-    }
-    if (decision && (decision.action === "allow" || decision.action === "deny")) {
-      return { status: "ok", decision: decision.action };
-    }
-    return { status: "error", message: translate("telegramApprovalNoButtonResponseMessage") };
-  } finally {
-    clearTimeout(timer);
-  }
 }
 
 // ── Menu — delegated to src/menu.js ──
@@ -3466,32 +2544,9 @@ const settingsEffectRouter = createSettingsEffectRouter({
   logWarn: console.warn,
 });
 settingsEffectRouter.start();
-_settingsController.subscribeKey("tgApproval", () => {
-  if (suppressTelegramApprovalSidecarSync > 0) return;
-  queueTelegramApprovalSidecarSync("settings");
-});
 _settingsController.subscribeKey("discordPresence", () => {
   syncDiscordPresence("settings");
 });
-_settingsController.subscribeKey("feishuApproval", () => {
-  queueFeishuApprovalSync("settings");
-});
-_settingsController.subscribeKey("mobilePreviewEnabled", async (enabled) => {
-  if (enabled) {
-    if (!_lanWss) {
-      const { initMobilePreviewServer } = require("./network/mobile-preview-server");
-      _lanWss = initMobilePreviewServer({
-        sessions,
-        getSettingsSnapshot: () => _settingsController.getSnapshot(),
-        isEnabled: () => _settingsController.get("mobilePreviewEnabled") === true,
-      });
-    }
-    await _lanWss.start();
-  } else if (_lanWss) {
-    _lanWss.cleanup();
-  }
-});
-
 animationOverridesMain = createSettingsAnimationOverridesMain({
   app,
   BrowserWindow,
@@ -3685,7 +2740,6 @@ registerSettingsIpc({
     return { status: "ok" };
   },
   aboutHeroSvgPath: path.join(__dirname, "..", "assets", "svg", "clawad-about-hero.svg"),
-  getLanWsServer: () => _lanWss,
 });
 
 registerSessionIpc({
@@ -3710,7 +2764,6 @@ registerSessionIpc({
       console.warn("Clawd: failed to pin Session HUD:", result.message);
     }
   },
-  getLanWsServer: () => _lanWss,
 });
 
 function createWindow() {
@@ -3902,7 +2955,6 @@ function createWindow() {
     }
     try { _remoteSshIpc.connectOnLaunchProfiles(); } catch {}
   }).catch(() => {});
-  if (_settingsController.get("mobilePreviewEnabled") === true) _lanWss.start();
   startStaleCleanup();
   // Wait for renderer to be ready before sending initial state
   // If hooks arrived during startup, respect them instead of forcing idle
@@ -4277,12 +3329,8 @@ if (!gotTheLock) {
     updateDebugLog = path.join(app.getPath("userData"), "update-debug.log");
     sessionDebugLog = path.join(app.getPath("userData"), "session-debug.log");
     focusDebugLog = path.join(app.getPath("userData"), "focus-debug.log");
-    initTelegramMigrationController().catch((err) => {
-      console.warn("Clawd: migration controller init failed:", err && err.message);
-    });
     try { syncDiscordPresence("startup"); }
     catch (err) { console.warn("Clawd: discord presence startup failed:", err && err.message); }
-    queueFeishuApprovalSync("startup");
     createWindow();
     // WSL agent detection is NOT started here: scanning runs a command inside
     // every installed distro, which boots each stopped VM — too aggressive for
@@ -4391,12 +3439,9 @@ if (!gotTheLock) {
     flushRuntimeStateToPrefs();
     globalShortcut.unregisterAll();
     void settingsSizePreviewSession.cleanup();
-    stopTelegramApprovalSidecar();
     if (discordPresenceBridge) discordPresenceBridge.stop();
-    stopFeishuApprovalClient();
     _perm.cleanup();
     _server.cleanup();
-    if (_lanWss) _lanWss.cleanup();
     _updateBubble.cleanup();
     _state.cleanup();
     _tick.cleanup();

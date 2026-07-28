@@ -86,13 +86,6 @@ Thinking when you prompt, typing when tools run, grooving or juggling for subage
 - **Process liveness detection** — detects crashed/exited supported agent processes and cleans up orphan sessions
 - **Startup recovery** — if Clawd restarts while any supported agent is still running, it stays awake instead of falling asleep
 
-### Mobile Companion (PWA)
-- **Live mirror on your phone** — enable `Settings…` → `Mobile / PWA` and open the pairing URL on your phone; the Clawd Mobile web app shows your agent sessions and their live states in real time
-- **Read-only by design** — the LAN bridge only broadcasts state; nothing on the phone can touch your machine (remote approval is on the roadmap)
-- **LAN-only + token-gated** — pairing requires a token, tokens rotate automatically with a grace window, and access can be regenerated or reset in one click
-- **Installable** — it's a PWA: add it to your home screen for an app-like experience
-> The mobile companion line — from the first prototype to token rotation — is built and led by core contributor [@Bynlk](https://github.com/Bynlk), who also maintains [clawd-on-mobile](https://github.com/Bynlk/clawd-on-mobile), a sister fork with a native Android app.
-
 ### System
 - **Click-through** — transparent areas pass clicks to windows below; only Clawd's body is interactive
 - **Position memory** — Clawd remembers where you left it across restarts (including mini mode)
@@ -210,7 +203,6 @@ Some things we'd like to explore in the future:
 - Codex terminal focus via process tree lookup from `codex.exe` PID
 - Theme registry and in-app download
 - Hook uninstall script for clean app removal
-- Mobile companion: remote permission approval from your phone (in progress, led by [@Bynlk](https://github.com/Bynlk))
 
 ## Contributing
 

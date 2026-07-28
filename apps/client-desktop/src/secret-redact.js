@@ -1,10 +1,9 @@
 "use strict";
 
-// Redact common secret shapes from text that is about to leave the desktop for
-// a remote approval channel (Telegram, Feishu). Shared by the desktop approval
-// summary builder (permission.js) and the channel renderers so that an agent
-// which quotes a key in a permission summary OR an elicitation question/option
-// can't leak it into a remote chat log.
+// 권한 승인 요약·엘리시테이션 문구에 섞여 들어온 비밀값 형태를 가린다. 에이전트가
+// 도구 입력에 API 키를 인용해도 승인 카드·로그에 원문이 남지 않게 하는 방어선이다.
+// 원래는 원격 승인 채널로 나가는 텍스트를 위한 것이었지만 그 채널은 제거됐고
+// (CLAW-129), 지금은 로컬 승인 요약 빌더(permission.js)가 쓴다.
 //
 // Rendering-layer only: callers apply this to the *displayed* string, never to
 // the value used as an answer-map key, so redaction can't desync answer

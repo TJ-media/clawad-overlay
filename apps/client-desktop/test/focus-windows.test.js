@@ -360,14 +360,14 @@ describe("Windows terminal focus", () => {
         cwd: "D:\\repo-a",
         sessionId: "session-a",
         agentId: "claude-code",
-        requestSource: "telegram-direct-send",
+        requestSource: "remote-request",
       });
       const second = focus.focusTerminalWindow({
         sourcePid: 2222,
         cwd: "D:\\repo-b",
         sessionId: "session-b",
         agentId: "claude-code",
-        requestSource: "telegram-direct-send",
+        requestSource: "remote-request",
       });
 
       assert.equal(writes.length, 2);

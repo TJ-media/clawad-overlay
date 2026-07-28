@@ -33,7 +33,6 @@ describe("prefs.getDefaults", () => {
     assert.notStrictEqual(a.petAccessory, b.petAccessory);
     assert.notStrictEqual(a.shortcuts, b.shortcuts);
     assert.notStrictEqual(a.sessionAliases, b.sessionAliases);
-    assert.notStrictEqual(a.tgApproval, b.tgApproval);
     // Mutating one shouldn't affect the other
     a.agents["claude-code"].enabled = false;
     assert.strictEqual(b.agents["claude-code"].enabled, true);
@@ -71,23 +70,6 @@ describe("prefs.getDefaults", () => {
     assert.strictEqual(d.notificationBubbleAutoCloseSeconds, 6);
     assert.strictEqual(d.updateBubbleAutoCloseSeconds, 9);
     assert.deepStrictEqual(d.sessionAliases, {});
-    assert.deepStrictEqual(d.tgApproval, {
-      enabled: false,
-      allowedTgUserId: "",
-      targetSessionKey: "",
-      notifyOnComplete: false,
-      completionOutputMode: "off",
-      r3DirectSendEnabled: false,
-    });
-    assert.deepStrictEqual(d.feishuApproval, {
-      enabled: false,
-      // Feishu (China) is the default so existing users keep the platform they
-      // were implicitly on before this field existed.
-      platform: "feishu",
-      idType: "open_id",
-      approverId: "",
-      connectionTimeoutSeconds: 15,
-    });
   });
 
   it("seeds only default-installed agents as enabled", () => {
@@ -309,26 +291,6 @@ describe("prefs.validate", () => {
 
     assert.strictEqual(v.version, prefs.CURRENT_VERSION);
     assert.strictEqual(v.agents.pi.permissionsEnabled, false);
-  });
-
-  it("normalizes Telegram approval prefs without storing a token", () => {
-    const v = prefs.validate({
-      tgApproval: {
-        enabled: true,
-        allowedTgUserId: " 123456789 ",
-        targetSessionKey: "987654321",
-        botToken: "123:should-not-survive",
-      },
-    });
-    assert.deepStrictEqual(v.tgApproval, {
-      enabled: true,
-      allowedTgUserId: "123456789",
-      targetSessionKey: "telegram:987654321",
-      notifyOnComplete: false,
-      completionOutputMode: "off",
-      r3DirectSendEnabled: false,
-    });
-    assert.strictEqual(Object.prototype.hasOwnProperty.call(v.tgApproval, "botToken"), false);
   });
 
   it("keeps valid fields verbatim", () => {
@@ -1040,37 +1002,38 @@ describe("prefs.migrate v6 → v7 (Codex Native prompt sound default)", () => {
   });
 });
 
-describe("prefs.migrate v7 → v8 (Telegram bare completion default)", () => {
-  it("turns old persisted bare completion pings off", () => {
+// CLAW-129에서 원격 승인(텔레그램·페이슈)과 모바일 프리뷰를 제거했다. 그 설정 키를
+// 들고 있던 기존 prefs 파일이 있어도 마이그레이션 체인이 끊기지 않고, 제거된 키는
+// 스냅샷에서 사라져야 한다 — validate()가 스키마 키만으로 결과를 만들기 때문이다.
+describe("prefs.migrate — 제거된 원격 승인·모바일 프리뷰 키", () => {
+  it("제거된 키를 들고 있는 구버전 prefs도 최신 버전으로 올린다", () => {
     const upgraded = prefs.migrate({
       version: 7,
-      tgApproval: {
-        enabled: true,
-        allowedTgUserId: "123456789",
-        targetSessionKey: "telegram:123456789",
-        notifyOnComplete: true,
-        completionOutputMode: "full",
-      },
-    });
-    const validated = prefs.validate(upgraded);
-
-    assert.strictEqual(validated.version, prefs.CURRENT_VERSION);
-    assert.strictEqual(validated.tgApproval.notifyOnComplete, false);
-    assert.strictEqual(validated.tgApproval.completionOutputMode, "full");
-    assert.strictEqual(validated.tgApproval.enabled, true);
-  });
-
-  it("migrates older prefs without Telegram approval settings safely", () => {
-    const upgraded = prefs.migrate({
-      version: 6,
       lang: "zh",
+      mobilePreviewEnabled: true,
+      tgApproval: { enabled: true, allowedTgUserId: "123456789" },
+      feishuApproval: { enabled: true, approverId: "ou_x" },
+      tgMigration: { transport: "native" },
     });
     const validated = prefs.validate(upgraded);
 
     assert.strictEqual(validated.version, prefs.CURRENT_VERSION);
     assert.strictEqual(validated.lang, "zh");
-    assert.strictEqual(validated.tgApproval.notifyOnComplete, false);
-    assert.strictEqual(validated.tgApproval.completionOutputMode, "off");
+  });
+
+  it("제거된 키는 스냅샷과 기본값에 남기지 않는다", () => {
+    const validated = prefs.validate({
+      mobilePreviewEnabled: true,
+      tgApproval: { enabled: true },
+      feishuApproval: { enabled: true },
+      tgMigration: { transport: "native" },
+    });
+    const defaults = prefs.getDefaults();
+
+    for (const key of ["mobilePreviewEnabled", "tgApproval", "feishuApproval", "tgMigration"]) {
+      assert.strictEqual(key in validated, false, key + "는 제거된 키다");
+      assert.strictEqual(key in defaults, false, key + "는 기본값에도 없어야 한다");
+    }
   });
 });
 
