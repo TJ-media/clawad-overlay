@@ -59,7 +59,7 @@
     "electron",
     "claude-code"
   ],
-  "author": "rullerzhou-afk",
+  "author": "TaeJeong KIM <oganesson12@naver.com>",
   "license": "AGPL-3.0-only",
   "type": "commonjs",
   "build": {
@@ -104,7 +104,7 @@
       ]
     },
     "linux": {
-      "maintainer": "rullerzhou-afk <rullerzhou-afk@users.noreply.github.com>",
+      "maintainer": "TaeJeong KIM <oganesson12@naver.com>",
       "icon": "assets/icons",
       "category": "Utility",
       "artifactName": "Clawd-on-Desk-${version}-${arch}.${ext}",

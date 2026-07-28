@@ -117,9 +117,9 @@ AGPL이 요구하는 저작권 표시·변경 고지는 이 문서와 보존된 
 
 ## 4b. 배포 전 반드시 처리할 것
 
-- **`package.json`의 `author`·`linux.maintainer`가 upstream 저작자로 남아 있다.** 브랜딩 교체
-  대상이지만 공개 저장소에 넣을 연락처(이름·이메일)를 정해야 해서 미뤘다. deb 빌드는
-  `maintainer` 형식을 요구하므로 Linux 지원을 켜기 전에는 반드시 채워야 한다. (CLAW-126)
+- ~~**`package.json`의 `author`·`linux.maintainer`가 upstream 저작자로 남아 있다.**~~
+  **해결 (2026-07-28, CLAW-126)** — 유지보수 연락처를 `TaeJeong KIM <oganesson12@naver.com>`으로
+  채웠다. `deb` 빌드가 요구하는 `Name <email>` 형식을 지킨다.
 
 - ~~**자동 업데이트가 upstream을 바라본다.**~~ **해결 (2026-07-28, CLAW-92)** —
   `src/updater.js`의 조회 대상을 `UPDATE_REPO_SLUG = "TJ-media/clawad-overlay"` 한 곳으로 모으고
