@@ -104,7 +104,22 @@ AGPL이 요구하는 저작권 표시·변경 고지는 이 문서와 보존된 
 
 이후 변경은 이 목록에 계속 추가한다.
 
+- 2026-07-28 — 사용자 노출 문자열을 클로애드 브랜드로 교체. (CLAW-126)
+  - `src/i18n.js`·`src/settings-i18n.js`의 로케일 사전 5종(en·zh·zh-TW·ko·ja) 안에서
+    `Clawd`/`Clawd on Desk` **497건**을 `Claw-Ad`(한국어는 `클로애드`)로 교체
+  - `build.productName` → `Claw-Ad`, `build.appId` → `ai.clawad.overlay`
+    (Windows AppUserModelID도 같은 값으로 맞춤 — `src/settings-window-icon.js`)
+  - 창 제목: 펫 `Claw-Ad`, 설정 `Claw-Ad Settings`, 광고 스트립 `Claw-Ad Strip`. 트레이 툴팁 `Claw-Ad`
+  - **바꾸지 않은 것**: 소문자 기능 식별자(`clawd-on-desk` 플러그인 id, `clawd://` 프로토콜,
+    훅 마커 `managed by clawd-on-desk`, `clawd-prefs.json`·`clawd.json` 파일명), 전역 심볼
+    `root.ClawdSettingsI18n`, upstream 저작권·기여자 고지, `package.json`의 `author`·`linux.maintainer`
+    (연락처 확정 필요 — 아래 4b 참조), 콘솔 로그 접두사
+
 ## 4b. 배포 전 반드시 처리할 것
+
+- **`package.json`의 `author`·`linux.maintainer`가 upstream 저작자로 남아 있다.** 브랜딩 교체
+  대상이지만 공개 저장소에 넣을 연락처(이름·이메일)를 정해야 해서 미뤘다. deb 빌드는
+  `maintainer` 형식을 요구하므로 Linux 지원을 켜기 전에는 반드시 채워야 한다. (CLAW-126)
 
 - ~~**자동 업데이트가 upstream을 바라본다.**~~ **해결 (2026-07-28, CLAW-92)** —
   `src/updater.js`의 조회 대상을 `UPDATE_REPO_SLUG = "TJ-media/clawad-overlay"` 한 곳으로 모으고
