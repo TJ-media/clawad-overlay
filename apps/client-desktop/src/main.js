@@ -950,6 +950,7 @@ let isQuitting = false;
 // further down. Read freely; never assign
 // directly (writes go through ctx setters → controller.applyUpdate).
 let showTray = _settingsController.get("showTray");
+let clawadAdsPaused = _settingsController.get("clawadAdsPaused");
 let showDock = _settingsController.get("showDock");
 let manageClaudeHooksAutomatically = _settingsController.get("manageClaudeHooksAutomatically");
 let autoStartWithClaude = _settingsController.get("autoStartWithClaude");
@@ -1104,6 +1105,37 @@ function togglePetVisibility() {
 function bringPetToPrimaryDisplay() {
   prepManualPetVisibility();
   return petWindowRuntime.bringPetToPrimaryDisplay();
+}
+
+// ── 광고 일시중지 (CLAW-89, 규칙 §7) ──
+//
+// 펫 숨기기와 다른 축이다: 펫은 그대로 두고 광고 표시와 적립만 멈춘다.
+// 일시중지하면 표시 중이던 구간을 스풀에 남기고 서피스 락을 반환해 statusline이 광고를 이어받는다.
+// clawad CLI의 `clawad pause`(sync까지 정지)와도 별개다 — 이건 오버레이 표시만 멈춘다.
+
+/** 광고 기능을 쓸 수 있는 상태인가(정책 캐시·후보 번들 존재). 메뉴 항목 노출 여부를 정한다. */
+function clawadAdsAvailable() {
+  try {
+    return _clawadAd.canRender() || clawadAdsPaused;
+  } catch {
+    return false;
+  }
+}
+
+/** 현재 일시중지 상태를 표시 루프에 반영한다. 재개 시 즉시 다시 평가한다. */
+function applyClawadAdsPaused() {
+  try {
+    if (clawadAdsPaused) _clawadAd.cleanup();
+    else _clawadAd.start();
+  } catch (err) {
+    console.warn("ClawAd: failed to apply ad pause state:", err && err.message);
+  }
+  rebuildAllMenus();
+}
+
+function toggleClawadAds() {
+  // 쓰기는 항상 컨트롤러를 거친다. 미러 변수 갱신·prefs 저장·applyClawadAdsPaused가 그 경로에서 일어난다.
+  _settingsController.applyUpdate("clawadAdsPaused", !clawadAdsPaused);
 }
 
 function sendToRenderer(channel, ...args) {
@@ -3224,6 +3256,9 @@ const _menuCtx = {
   repositionBubbles: () => repositionFloatingBubbles(),
   get petHidden() { return petWindowRuntime.isPetHidden(); },
   togglePetVisibility: () => togglePetVisibility(),
+  get clawadAdsPaused() { return clawadAdsPaused; },
+  get clawadAdsAvailable() { return clawadAdsAvailable(); },
+  toggleClawadAds: () => toggleClawadAds(),
   bringPetToPrimaryDisplay: () => bringPetToPrimaryDisplay(),
   get isQuitting() { return isQuitting; },
   set isQuitting(v) { isQuitting = v; },
@@ -3350,6 +3385,7 @@ const { t, buildContextMenu, buildTrayMenu, rebuildAllMenus, createTray,
 // ── Settings effect router ──
 const SETTINGS_MIRROR_SETTERS = {
   lang: (v) => { lang = v; }, size: (v) => { currentSize = v; resetKeepSizeFrozen(); }, showTray: (v) => { showTray = v; },
+  clawadAdsPaused: (v) => { clawadAdsPaused = v; applyClawadAdsPaused(); },
   showDock: (v) => { showDock = v; if (macHideController) macHideController.noteManualChange(); }, manageClaudeHooksAutomatically: (v) => { manageClaudeHooksAutomatically = v; },
   autoStartWithClaude: (v) => { autoStartWithClaude = v; }, openAtLogin: (v) => { openAtLogin = v; },
   bubbleFollowPet: (v) => { bubbleFollowPet = v; }, sessionHudEnabled: (v) => { sessionHudEnabled = v; },
@@ -4212,10 +4248,15 @@ if (!gotTheLock) {
     // 클로애드 광고 표시 루프 (CLAW-90). 광고를 그릴 수 있을 때만 서피스 락을 쥐고,
     // 락을 쥔 동안에만 표시한다 — 판단은 매 tick에서 clawad-ad-window가 한다.
     // 광고 캐시가 없으면 아무 것도 하지 않는다: 펫만 뜨고 광고는 statusline이 계속 담당한다.
-    try {
-      _clawadAd.start();
-    } catch (err) {
-      console.warn("ClawAd: ad surface start failed:", err && err.message);
+    // 사용자가 광고를 일시중지해 뒀으면(CLAW-89) 루프를 시작하지 않는다 — 락도 잡지 않는다.
+    if (!clawadAdsPaused) {
+      try {
+        _clawadAd.start();
+      } catch (err) {
+        console.warn("ClawAd: ad surface start failed:", err && err.message);
+      }
+    } else {
+      console.log("ClawAd: ads are paused by the user — the status line keeps the ad surface");
     }
 
     // Import system-backed settings (openAtLogin) into prefs on first run.
