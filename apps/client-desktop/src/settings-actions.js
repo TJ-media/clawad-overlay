@@ -160,25 +160,7 @@ const {
   forceRevokeOldIdentity,
   abortIdentityTxnToEmergencyNonce,
 } = require("./remote-ssh-identity");
-const {
-  validateTelegramApproval,
-  validateTelegramBotToken,
-} = require("./telegram-approval-settings");
 const { validateDiscordPresence } = require("./discord-presence-settings");
-const {
-  validateFeishuApproval,
-} = require("./feishu-approval-settings");
-const { EVENTS: TELEGRAM_MIGRATION_EVENTS } = require("./telegram-migration-state");
-
-// Only the Step-3 enable switch dispatches from the renderer since the
-// migration card retired: turn-on tests native, turn-off disables. The
-// legacy-enable / rollback transitions stay in the reducer for main-side
-// integrity but are no longer renderer-callable.
-const TELEGRAM_MIGRATION_RENDERER_EVENTS = new Set([
-  TELEGRAM_MIGRATION_EVENTS.USER_TEST_NATIVE,
-  TELEGRAM_MIGRATION_EVENTS.USER_DISABLE,
-]);
-
 const MANAGED_CLEANUP_AGENT_IDS = Object.freeze([
   "claude-code",
   "codex",
@@ -420,7 +402,6 @@ const updateRegistry = {
   freeRoam: requireBoolean("freeRoam"),
   keepSizeAcrossDisplays: requireBoolean("keepSizeAcrossDisplays"),
   fullscreenOverlay: requireBoolean("fullscreenOverlay"),
-  mobilePreviewEnabled: requireBoolean("mobilePreviewEnabled"),
 
   // ── System-backed prefs (object-form: validate + effect pre-commit gate) ──
   autoStartWithClaude,
@@ -619,41 +600,8 @@ const updateRegistry = {
     }
     return { status: "ok" };
   },
-  tgApproval(value) {
-    return validateTelegramApproval(value);
-  },
   discordPresence(value) {
     return validateDiscordPresence(value);
-  },
-  feishuApproval(value) {
-    return validateFeishuApproval(value);
-  },
-
-  // v0.9.0 spike: persisted migration state across restarts. Shape:
-  //   { transport?: "legacy"|"native"|"off", nativeVerifiedAt?: number|null,
-  //     legacyEnabled?: boolean|null,
-  //     migration?: { importedAt: number|null, importError: string|null } }
-  tgMigration(value) {
-    if (value == null || typeof value !== "object") {
-      return { status: "error", message: "tgMigration must be a plain object" };
-    }
-    const allowed = new Set(["transport", "nativeVerifiedAt", "legacyEnabled", "migration"]);
-    for (const k of Object.keys(value)) {
-      if (!allowed.has(k)) return { status: "error", message: `tgMigration.${k} not supported` };
-    }
-    if (value.transport != null && !["legacy", "native", "off"].includes(value.transport)) {
-      return { status: "error", message: "tgMigration.transport must be legacy|native|off" };
-    }
-    if (value.nativeVerifiedAt != null && (typeof value.nativeVerifiedAt !== "number" || !Number.isFinite(value.nativeVerifiedAt))) {
-      return { status: "error", message: "tgMigration.nativeVerifiedAt must be a finite number" };
-    }
-    if (value.legacyEnabled != null && typeof value.legacyEnabled !== "boolean") {
-      return { status: "error", message: "tgMigration.legacyEnabled must be boolean" };
-    }
-    if (value.migration != null && typeof value.migration !== "object") {
-      return { status: "error", message: "tgMigration.migration must be an object" };
-    }
-    return { status: "ok" };
   },
 
   shortcuts: {
@@ -1689,128 +1637,6 @@ function remoteSshDeleteProfile(payload, deps) {
   return { status: "ok", commit: { remoteSsh: next } };
 }
 
-async function telegramApprovalSetToken(payload, deps = {}) {
-  const token = typeof payload === "string"
-    ? payload
-    : (payload && typeof payload === "object" ? payload.token : "");
-  const valid = validateTelegramBotToken(token);
-  if (valid.status !== "ok") return valid;
-  if (!deps || typeof deps.writeTelegramApprovalToken !== "function") {
-    return { status: "error", message: "telegramApproval.setToken requires writeTelegramApprovalToken dep" };
-  }
-  const result = await deps.writeTelegramApprovalToken(valid.token);
-  if (!result || result.status !== "ok") {
-    return result || { status: "error", message: "Telegram bot token write failed" };
-  }
-  return { status: "ok", tokenStored: true };
-}
-
-function telegramApprovalStatus(_payload, deps = {}) {
-  if (!deps || typeof deps.getTelegramApprovalStatus !== "function") {
-    return { status: "error", message: "telegramApproval.status requires getTelegramApprovalStatus dep" };
-  }
-  const status = deps.getTelegramApprovalStatus();
-  return { status: "ok", state: status || { status: "stopped" } };
-}
-
-function telegramApprovalTokenInfo(_payload, deps = {}) {
-  if (!deps || typeof deps.getTelegramApprovalTokenInfo !== "function") {
-    return { status: "error", message: "telegramApproval.tokenInfo requires getTelegramApprovalTokenInfo dep" };
-  }
-  const info = deps.getTelegramApprovalTokenInfo() || { configured: false, masked: "" };
-  return {
-    status: "ok",
-    configured: info.configured === true,
-    masked: typeof info.masked === "string" ? info.masked : "",
-  };
-}
-
-// v0.9.0 migration: native-vs-sidecar transport controller.
-// All telegramMigration.* commands lock on the same `tgApproval` domain as the
-// legacy approval commands so they can't race against token writes.
-function telegramMigrationSnapshot(_payload, deps = {}) {
-  if (!deps || !deps.telegramMigration) {
-    return { status: "error", message: "telegramMigration.snapshot requires controller dep" };
-  }
-  return { status: "ok", snapshot: deps.telegramMigration.getSnapshot() };
-}
-
-async function telegramMigrationDispatch(payload, deps = {}) {
-  if (!deps || !deps.telegramMigration) {
-    return { status: "error", message: "telegramMigration.dispatch requires controller dep" };
-  }
-  if (!payload || typeof payload.type !== "string") {
-    return { status: "error", message: "telegramMigration.dispatch requires event.type" };
-  }
-  if (!TELEGRAM_MIGRATION_RENDERER_EVENTS.has(payload.type)) {
-    return {
-      status: "error",
-      errorCode: "EVENT_NOT_ALLOWED",
-      message: `telegramMigration.dispatch event ${payload.type} is not renderer-callable`,
-      snapshot: deps.telegramMigration.getSnapshot(),
-    };
-  }
-  const res = await deps.telegramMigration.dispatch(payload);
-  return res && res.ok
-    ? { status: "ok", state: res.state, snapshot: deps.telegramMigration.getSnapshot() }
-    : {
-        status: "error",
-        errorCode: res ? res.errorCode : "UNKNOWN",
-        message: res && res.message,
-        snapshot: deps.telegramMigration.getSnapshot(),
-      };
-}
-
-telegramMigrationDispatch.lockKey = "tgApproval";
-
-async function telegramApprovalSendTest(_payload, deps = {}) {
-  if (!deps || typeof deps.sendTelegramApprovalTest !== "function") {
-    return { status: "error", message: "telegramApproval.test requires sendTelegramApprovalTest dep" };
-  }
-  const result = await deps.sendTelegramApprovalTest();
-  return result || { status: "error", message: "Telegram approval test returned no result" };
-}
-
-async function feishuApprovalSetSecrets(payload, deps = {}) {
-  const secrets = payload && typeof payload === "object" ? payload : {};
-  if (!deps || typeof deps.writeFeishuApprovalSecrets !== "function") {
-    return { status: "error", message: "feishuApproval.setSecrets requires writeFeishuApprovalSecrets dep" };
-  }
-  // Pass the writer's result through untouched: it carries the `code` the
-  // settings page localizes and the English detail naming the real cause.
-  const result = await deps.writeFeishuApprovalSecrets(secrets);
-  if (!result || result.status !== "ok") {
-    return result || { status: "error", code: "write-failed", message: "Secrets write returned no result" };
-  }
-  return { status: "ok", secretsStored: true };
-}
-
-function feishuApprovalStatus(_payload, deps = {}) {
-  if (!deps || typeof deps.getFeishuApprovalStatus !== "function") {
-    return { status: "error", message: "feishuApproval.status requires getFeishuApprovalStatus dep" };
-  }
-  const status = deps.getFeishuApprovalStatus();
-  return { status: "ok", state: status || { status: "stopped" } };
-}
-
-function feishuApprovalSecretInfo(_payload, deps = {}) {
-  if (!deps || typeof deps.getFeishuApprovalSecretInfo !== "function") {
-    return { status: "error", message: "feishuApproval.secretInfo requires getFeishuApprovalSecretInfo dep" };
-  }
-  const info = deps.getFeishuApprovalSecretInfo() || { configured: false };
-  return { status: "ok", ...info };
-}
-
-async function feishuApprovalSendTest(_payload, deps = {}) {
-  if (!deps || typeof deps.sendFeishuApprovalTest !== "function") {
-    return { status: "error", message: "feishuApproval.test requires sendFeishuApprovalTest dep" };
-  }
-  const result = await deps.sendFeishuApprovalTest();
-  // Defensive only, but the renderer shows a code-less `message` verbatim — so
-  // it stays brand-neutral like every other user-visible string on this path.
-  return result || { status: "error", message: "Remote approval test returned no result" };
-}
-
 function cleanupMessage(result) {
   const summary = result && result.summary;
   if (!summary) return "Integration cleanup finished";
@@ -1930,10 +1756,6 @@ remoteSshForceRevoke.lockKey = "remoteSsh";
 remoteSshBeginRuntimeModeSwitch.lockKey = "remoteSsh";
 remoteSshAdvanceRuntimeModeSwitch.lockKey = "remoteSsh";
 remoteSshSwitchRuntimeMode.lockKey = "remoteSsh";
-telegramApprovalSetToken.lockKey = "tgApproval";
-telegramApprovalSendTest.lockKey = "tgApproval";
-feishuApprovalSetSecrets.lockKey = "feishuApproval";
-feishuApprovalSendTest.lockKey = "feishuApproval";
 cleanupIntegrationsCommand.lockKey = "agentIntegration";
 
 const repairDoctorIssue = createRepairDoctorIssue({
@@ -2023,16 +1845,6 @@ const commandRegistry = {
   "remoteSsh.beginRuntimeModeSwitch": remoteSshBeginRuntimeModeSwitch,
   "remoteSsh.advanceRuntimeModeSwitch": remoteSshAdvanceRuntimeModeSwitch,
   "remoteSsh.switchRuntimeMode": remoteSshSwitchRuntimeMode,
-  "telegramApproval.setToken": telegramApprovalSetToken,
-  "telegramApproval.status": telegramApprovalStatus,
-  "telegramApproval.tokenInfo": telegramApprovalTokenInfo,
-  "telegramApproval.test": telegramApprovalSendTest,
-  "feishuApproval.setSecrets": feishuApprovalSetSecrets,
-  "feishuApproval.status": feishuApprovalStatus,
-  "feishuApproval.secretInfo": feishuApprovalSecretInfo,
-  "feishuApproval.test": feishuApprovalSendTest,
-  "telegramMigration.snapshot": telegramMigrationSnapshot,
-  "telegramMigration.dispatch": telegramMigrationDispatch,
 };
 
 module.exports = {

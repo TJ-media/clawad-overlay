@@ -27,17 +27,9 @@ const { normalizeShortcuts, getDefaultShortcuts } = require("./shortcut-actions"
 const { isValidDisplaySnapshot } = require("./work-area");
 const { normalizeRemoteSsh, getDefaults: getRemoteSshDefaults } = require("./remote-ssh-profile");
 const {
-  cloneDefaultTelegramApproval,
-  normalizeTelegramApproval,
-} = require("./telegram-approval-settings");
-const {
   cloneDefaultDiscordPresence,
   normalizeDiscordPresence,
 } = require("./discord-presence-settings");
-const {
-  cloneDefaultFeishuApproval,
-  normalizeFeishuApproval,
-} = require("./feishu-approval-settings");
 const {
   NOTIFICATION_DEFAULT_SECONDS,
   UPDATE_DEFAULT_SECONDS,
@@ -228,7 +220,6 @@ const SCHEMA = {
     validate: (v) => Number.isInteger(v) && v >= 0 && v <= 60000,
   },
   lowPowerIdleMode: { type: "boolean", default: false },
-  mobilePreviewEnabled: { type: "boolean", default: false },
   // When true, prevent the OS from sleeping while any agent task is in
   // progress (working/thinking/etc.); allow sleep again once tasks finish.
   keepAwakeWhileWorking: { type: "boolean", default: false },
@@ -391,48 +382,10 @@ const SCHEMA = {
     defaultFactory: () => getRemoteSshDefaults(),
     normalize: normalizeRemoteSsh,
   },
-  tgApproval: {
-    type: "object",
-    defaultFactory: () => cloneDefaultTelegramApproval(),
-    normalize: normalizeTelegramApproval,
-  },
   discordPresence: {
     type: "object",
     defaultFactory: () => cloneDefaultDiscordPresence(),
     normalize: normalizeDiscordPresence,
-  },
-  feishuApproval: {
-    type: "object",
-    defaultFactory: () => cloneDefaultFeishuApproval(),
-    normalize: normalizeFeishuApproval,
-  },
-  // v0.9.0 migration state. transport defaults to null (undecided) so v0.8.x
-  // users upgrading without this key fall onto the "detect legacy artefacts"
-  // path inside the migration reducer.
-  tgMigration: {
-    type: "object",
-    defaultFactory: () => ({
-      transport: null,
-      nativeVerifiedAt: null,
-      legacyEnabled: null,
-      migration: { importedAt: null, importError: null },
-    }),
-    normalize: (value) => {
-      if (!value || typeof value !== "object") {
-        return { transport: null, nativeVerifiedAt: null, legacyEnabled: null, migration: { importedAt: null, importError: null } };
-      }
-      return {
-        transport: ["legacy", "native", "off"].includes(value.transport) ? value.transport : null,
-        nativeVerifiedAt: typeof value.nativeVerifiedAt === "number" ? value.nativeVerifiedAt : null,
-        legacyEnabled: typeof value.legacyEnabled === "boolean" ? value.legacyEnabled : null,
-        migration: value.migration && typeof value.migration === "object"
-          ? {
-              importedAt: typeof value.migration.importedAt === "number" ? value.migration.importedAt : null,
-              importError: typeof value.migration.importError === "string" ? value.migration.importError : null,
-            }
-          : { importedAt: null, importError: null },
-      };
-    },
   },
   // Background update-check toggle. When true, the scheduler in updater.js
   // runs a quiet GitHub discovery on a 12-hour cycle (packaged builds only).
@@ -661,13 +614,9 @@ function migrate(raw) {
     }
     out.version = 7;
   }
-  // v7 -> v8: bare Telegram completion pings now default off. There was no
-  // UI for this flag, so a persisted true is overwhelmingly the old default
-  // rather than an explicit user opt-in.
+  // v7 -> v8: 원격 승인 완료 알림 기본값을 끄던 단계다. 그 기능(CLAW-129)이
+  // 제거되어 손댈 값이 없지만, 버전 체인을 끊지 않도록 단계 자체는 남긴다.
   if (out.version < 8) {
-    if (out.tgApproval && typeof out.tgApproval === "object") {
-      out.tgApproval.notifyOnComplete = false;
-    }
     out.version = 8;
   }
   // v8 -> v9: introduce autoApproveAllPermissions ("auto-pilot"). Force the

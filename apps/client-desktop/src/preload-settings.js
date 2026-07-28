@@ -140,9 +140,6 @@ contextBridge.exposeInMainWorld("settingsAPI", {
   removeCodexPet: (themeId) => ipcRenderer.invoke("settings:remove-codex-pet", themeId),
   confirmRemoveTheme: (themeId) =>
     ipcRenderer.invoke("settings:confirm-remove-theme", themeId),
-  getMobileConnectionInfo: () => ipcRenderer.invoke("settings:mobile-connection-info"),
-  regenerateMobileToken: () => ipcRenderer.invoke("settings:regenerate-mobile-token"),
-  resetMobileAccess: () => ipcRenderer.invoke("settings:reset-mobile-access"),
   onChanged: (cb) => {
     if (typeof cb === "function") listeners.add(cb);
   },

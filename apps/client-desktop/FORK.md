@@ -64,6 +64,24 @@ AGPL이 요구하는 저작권 표시·변경 고지는 이 문서와 보존된 
     오버레이(펫 + 광고 렌더)와 무관한데도 빌드가 외부 GitHub 릴리스의 서명 없는
     실행 바이너리 다운로드를 강제하고 있었다. 기능 코드 자체는 아직 남아 있다.
 
+- 2026-07-28 — **외부 전송 부가 기능 제거**: 원격 승인(텔레그램·페이슈)과 모바일 프리뷰. (CLAW-129)
+  - 삭제한 모듈: `src/telegram-*.js` 14개, `src/feishu-approval-*.js` 2개,
+    `src/settings-tab-telegram-approval.js`, `src/settings-tab-mobile.js`,
+    `src/network/mobile-preview-server.js`, `pwa/` 6개 파일,
+    `scripts/{fetch,verify}-sidecar-binaries.js`, 관련 테스트 27개, 가이드 문서 2종
+  - 배선 제거: `main.js`(함수 47개·약 900줄), `prefs.js`(`tgApproval`·`feishuApproval`·
+    `tgMigration`·`mobilePreviewEnabled` 스키마 키), `settings-actions.js`(커맨드 10개·검증기 3개),
+    설정 UI(사이드바 탭·아이콘·IPC 핸들러 3개·preload 브리지 3개), i18n 키 232종 × 5개 로케일
+  - `permission.js`의 **일반 원격 승인 골격은 남겼다** — ctx가 채널을 주입하지 않으므로
+    `getRemoteApprovalClients()`가 빈 배열을 반환하고 `startRemoteApproval`은 무동작이다.
+    상류 병합 지점을 보존하고 승인 처리 경로를 갈라놓지 않기 위한 선택이다
+  - 사유: (1) 텔레그램 브리지는 upstream의 사이드카→네이티브 전환이 미완성이라
+    `TESTING_NATIVE` 상태에서 멈춰 실제로 동작하지 않았다 (2) 동작시키면 권한 프롬프트의
+    도구 입력(명령어·경로)과 완료 알림 본문을 제3자 서비스로 보낸다 (3) 모바일 프리뷰는
+    `0.0.0.0`에 정적 PWA + WebSocket을 서빙해 AGPL §13 소스 제공 고지 의무가 걸린다
+  - 부수 효과: 스위트를 멈추게 했던 `test/mobile-preview-server.test.js` 핸들 누수가
+    사라졌다. 전체 실패가 55건 → 33건으로 줄었다 (남은 33건은 이 변경과 무관한 기존 실패)
+
 - 2026-07-25 — 에이전트 지침 정비. (CLAW-89)
   - `CLAUDE.md`를 저장소 루트 `CLAUDE.md`를 가리키도록 교체 (원본은 `AGENTS.md` 한 줄 포인터였다)
   - `AGENTS.md` 상단에 upstream 문서임을 알리는 배너 추가 — 내용은 보존
@@ -125,9 +143,9 @@ AGPL이 요구하는 저작권 표시·변경 고지는 이 문서와 보존된 
   `src/updater.js`의 조회 대상을 `UPDATE_REPO_SLUG = "TJ-media/clawad-overlay"` 한 곳으로 모으고
   `package.json`의 `build.publish`도 같은 저장소로 바꿨다. User-Agent도 `Claw-Ad`로 교체했다.
   아직 릴리스가 없으므로 조회는 실패하고 업데이터는 조용히 지나간다 — 배포 채널 구성은 CLAW-92 본편.
-- **미사용 기능 정리 검토**: 텔레그램/페이슈 원격 승인 브리지는 Claude Code의 권한
-  프롬프트를 외부에서 승인하는 경로다. 광고 클라이언트에 불필요한 공격면이므로
-  오버레이 범위 확정(CLAW-86) 시 제거 여부를 결정한다.
+- ~~**미사용 기능 정리 검토**: 텔레그램/페이슈 원격 승인 브리지…~~
+  **해결 (2026-07-28, CLAW-129)** — 원격 승인 브리지와 모바일 프리뷰 서버를 제거했다.
+  아래 §4 변경 내역 참조.
 
 ## 5. 경계
 

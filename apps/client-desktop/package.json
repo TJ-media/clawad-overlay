@@ -12,9 +12,7 @@
     "build:mac": "electron-builder --mac",
     "build:linux": "electron-builder --linux",
     "build:all": "electron-builder --win --mac --linux",
-    "fetch:sidecars": "node scripts/fetch-sidecar-binaries.js",
     "verify:electron": "node scripts/verify-electron-install.js",
-    "verify:sidecars": "node scripts/verify-sidecar-binaries.js",
     "postinstall": "node scripts/verify-electron-install.js --context postinstall",
     "test": "node test/run-tests.js",
     "create-theme": "node scripts/create-theme.js",
@@ -148,8 +146,7 @@
       "hooks/**/*",
       "extensions/**/*",
       "agents/**/*",
-      "themes/**/*",
-      "pwa/**/*"
+      "themes/**/*"
     ],
     "asarUnpack": [
       "assets/svg/**/*",

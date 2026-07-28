@@ -230,9 +230,9 @@ describe("package build config", () => {
     });
   });
 
-  // CLAW-89에서 사이드카 의존을 제거했다 (FORK.md §4). 아래 두 테스트는 원래
-  // 프리페치와 패키징 복사가 있을 것을 단정했는데, 방향을 뒤집어 되돌아오지 않는지 지킨다.
-  describe("Telegram approval sidecar packaging", () => {
+  // CLAW-89에서 사이드카 의존을, CLAW-129에서 원격 승인 기능 자체를 제거했다 (FORK.md §4).
+  // 아래 단정은 전부 "돌아오지 않는지"를 지키는 역방향 가드다.
+  describe("원격 승인 사이드카 잔재 방지", () => {
     it("must not preflight sidecar binaries before source launches", () => {
       assert.doesNotMatch(
         pkg.scripts.start,
@@ -241,10 +241,10 @@ describe("package build config", () => {
       );
     });
 
-    it("must not copy cc-connect-clawd sidecars into packaged resources", () => {
+    it("must not copy sidecars into packaged resources", () => {
       const extra = pkg.build.extraResources || [];
       const copied = extra.some(
-        (e) => e && e.from === "bin/cc-connect-clawd"
+        (e) => e && typeof e.from === "string" && /sidecar|cc-connect/i.test(e.from)
       );
       assert.ok(
         !copied,
@@ -252,35 +252,16 @@ describe("package build config", () => {
       );
     });
 
-    it("documents the expected sidecar binary names in the README", () => {
-      const readme = path.join(ROOT, "bin", "cc-connect-clawd", "README.md");
-      assert.ok(fs.existsSync(readme), "bin/cc-connect-clawd/README.md should document release binary names");
-      const text = fs.readFileSync(readme, "utf8");
-      assert.match(text, /windows-x64\/cc-connect-clawd\.exe/);
-      assert.match(text, /darwin-arm64\/cc-connect-clawd/);
-      assert.match(text, /linux-x64\/cc-connect-clawd/);
+    it("keeps no sidecar fetch/verify scripts in package.json", () => {
+      const names = Object.keys(pkg.scripts || {}).filter((k) => /sidecar/i.test(k));
+      assert.deepEqual(names, [], `사이드카 스크립트가 남아 있다: ${names.join(", ")}`);
     });
 
-    it("fetches and verifies pinned sidecars before release builds", () => {
-      const workflow = fs.readFileSync(path.join(ROOT, ".github", "workflows", "build.yml"), "utf8");
-      assertWorkflowOrder(
-        workflow,
-        "npm run fetch:sidecars -- --target windows-x64,windows-arm64",
-        "node scripts/verify-sidecar-binaries.js prebuild:win:all",
-        "npx electron-builder --win --publish never"
-      );
-      assertWorkflowOrder(
-        workflow,
-        "npm run fetch:sidecars -- --target darwin-x64,darwin-arm64",
-        "node scripts/verify-sidecar-binaries.js prebuild:mac",
-        "npx electron-builder --mac --publish never"
-      );
-      assertWorkflowOrder(
-        workflow,
-        "npm run fetch:sidecars -- --target linux-x64",
-        "node scripts/verify-sidecar-binaries.js prebuild:linux",
-        "npx electron-builder --linux --publish never"
-      );
+    it("keeps release workflows free of sidecar steps", () => {
+      for (const name of ["build.yml", "wayland-smoke.yml"]) {
+        const workflow = fs.readFileSync(path.join(ROOT, ".github", "workflows", name), "utf8");
+        assert.doesNotMatch(workflow, /sidecar/i, `${name}에 사이드카 단계가 남아 있다`);
+      }
     });
 
     it("publishes GitHub releases only for version tags", () => {
@@ -311,15 +292,4 @@ describe("package build config", () => {
 function findWorkflowJobIndex(workflow, jobName) {
   const match = String(workflow || "").match(new RegExp(`(?:^|\\r?\\n)  ${jobName}:\\r?\\n`));
   return match ? match.index : -1;
-}
-
-function assertWorkflowOrder(workflow, fetchCommand, verifyCommand, buildCommand) {
-  const fetchIndex = workflow.indexOf(fetchCommand);
-  const verifyIndex = workflow.indexOf(verifyCommand);
-  const buildIndex = workflow.indexOf(buildCommand);
-  assert.ok(fetchIndex >= 0, `workflow should run: ${fetchCommand}`);
-  assert.ok(verifyIndex >= 0, `workflow should run: ${verifyCommand}`);
-  assert.ok(buildIndex >= 0, `workflow should run: ${buildCommand}`);
-  assert.ok(fetchIndex < verifyIndex, `${fetchCommand} should run before ${verifyCommand}`);
-  assert.ok(verifyIndex < buildIndex, `${verifyCommand} should run before ${buildCommand}`);
 }

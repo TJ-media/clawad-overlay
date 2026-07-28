@@ -49,8 +49,6 @@ jobs:
 
       - name: Build the AppImage from this ref
         run: |
-          npm run fetch:sidecars -- --target linux-x64
-          node scripts/verify-sidecar-binaries.js prebuild:linux
           npx electron-builder --linux AppImage --publish never
           ls -l dist/*.AppImage
 

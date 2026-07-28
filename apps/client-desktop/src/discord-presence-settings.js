@@ -42,8 +42,8 @@ function validateDiscordPresence(value) {
   return { status: "ok" };
 }
 
-// Mirrors telegram-approval-settings.readiness(). defaultAppId is injectable so
-// the BYO handoff path can be tested while the shipped constant is still empty.
+// defaultAppId is injectable so the BYO handoff path can be tested while the
+// shipped constant is still empty.
 function readiness(config, defaultAppId = DEFAULT_CLAWD_DISCORD_APP_ID) {
   const cfg = normalizeDiscordPresence(config);
   const appId = cfg.applicationId || defaultAppId;

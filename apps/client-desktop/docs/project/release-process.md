@@ -10,14 +10,12 @@ Use this flow when preparing a Clawd app release.
 
 ```bash
 npm test
-node scripts/verify-sidecar-binaries.js prebuild:all
 ```
 
 4. Run the `Build & Release` workflow manually on `main`.
 
-Manual workflow dispatch builds Windows, macOS, and Linux artifacts, fetches the
-pinned `cc-connect-clawd` sidecar release, verifies source-pinned checksums, and
-uploads build artifacts. It does not publish a GitHub Release.
+Manual workflow dispatch builds Windows, macOS, and Linux artifacts and uploads
+them. It does not publish a GitHub Release.
 
 ## Draft Release
 
@@ -50,7 +48,7 @@ Before launching:
 - Confirm the packaged app shows `0.13.0` metadata.
 - Confirm packaged resources include `app.asar.unpacked/hooks`,
   `app.asar.unpacked/agents`, `app.asar.unpacked/extensions`,
-  `app.asar.unpacked/themes`, and `sidecars/cc-connect-clawd`.
+  and `app.asar.unpacked/themes`.
 - Confirm Windows artifacts are architecture-specific x64 / ARM64 installers,
   not a universal NSIS installer.
 - For migration smoke, install v0.12.0 first and save a copy of the old
@@ -116,11 +114,6 @@ Recommended all-platform checks:
   permission request still shows a bubble, by design.
 - Settings -> About -> Check for updates completes without an error.
 - Update labels never show a duplicated prefix such as `vv0.13.0`.
-- Telegram approval cards show the final outcome for decisions made on Telegram
-  and for approvals resolved elsewhere.
-- Scan the mobile PWA pairing URL on a phone and confirm session cards appear.
-- Regenerate or reset the mobile token and confirm the phone can reconnect with
-  the new token.
 
 Windows checks:
 
@@ -172,10 +165,6 @@ draft.
 
 ## Sidecar Dependency
 
-Clawd release builds do not consume upstream `cc-connect` latest artifacts. They
-download the fixed `cc-connect-clawd` fork release pinned by
-`scripts/fetch-sidecar-binaries.js`, verify SHA256 values pinned in that script,
-and package those binaries into app resources.
-
-When the sidecar needs an upstream update, publish a new fixed sidecar release
-from the fork first, then update the Clawd pin and rerun the fetch/verify tests.
+없다. 원격 승인 브리지(`cc-connect-clawd` Go 사이드카)는 CLAW-129에서 기능과 함께
+제거됐고, 릴리스 빌드는 외부 바이너리를 내려받지 않는다. 되돌아오지 않는지는
+`test/package-build-config.test.js`의 "원격 승인 사이드카 잔재 방지"가 지킨다.
