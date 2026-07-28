@@ -168,8 +168,8 @@
     "publish": [
       {
         "provider": "github",
-        "owner": "rullerzhou-afk",
-        "repo": "clawd-on-desk"
+        "owner": "TJ-media",
+        "repo": "clawad-overlay"
       }
     ]
   },
