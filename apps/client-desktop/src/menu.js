@@ -333,6 +333,14 @@ module.exports = function initMenu(ctx) {
       label: ctx.petHidden ? t("showPet") : t("hidePet"),
       click: () => ctx.togglePetVisibility(),
     });
+    // 광고 일시중지 (CLAW-89, 규칙 §7). 펫 숨기기와 다른 축이다 — 펫은 그대로 두고 광고 표시와
+    // 적립만 멈춘다. 광고 기능 자체가 없는 환경(정책 캐시·번들 없음)에서는 항목을 노출하지 않는다.
+    if (typeof ctx.toggleClawadAds === "function" && ctx.clawadAdsAvailable) {
+      appGroup.push({
+        label: ctx.clawadAdsPaused ? t("resumeAds") : t("pauseAds"),
+        click: () => ctx.toggleClawadAds(),
+      });
+    }
 
     const quitGroup = [
       { label: t("quit"), click: () => requestAppQuit() },
@@ -545,6 +553,14 @@ module.exports = function initMenu(ctx) {
       label: ctx.petHidden ? t("showPet") : t("hidePet"),
       click: () => ctx.togglePetVisibility(),
     });
+    // 광고 일시중지 (CLAW-89, 규칙 §7). 펫 숨기기와 다른 축이다 — 펫은 그대로 두고 광고 표시와
+    // 적립만 멈춘다. 광고 기능 자체가 없는 환경(정책 캐시·번들 없음)에서는 항목을 노출하지 않는다.
+    if (typeof ctx.toggleClawadAds === "function" && ctx.clawadAdsAvailable) {
+      appGroup.push({
+        label: ctx.clawadAdsPaused ? t("resumeAds") : t("pauseAds"),
+        click: () => ctx.toggleClawadAds(),
+      });
+    }
 
     // Quit stands alone as the final group so it is always set off by a
     // separator (native-menu convention), which also keeps Hide/Show Pet
