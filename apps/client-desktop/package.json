@@ -135,6 +135,7 @@
     "files": [
       "NOTICE.md",
       "src/**/*",
+      "assets/LICENSE",
       "assets/icon.ico",
       "assets/icon.png",
       "assets/icons/**/*",
