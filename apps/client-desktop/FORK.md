@@ -78,6 +78,30 @@ AGPL이 요구하는 저작권 표시·변경 고지는 이 문서와 보존된 
     절차적 생성 색상 견본 격자다(픽스처 README가 "generated test art"로 명시). 최초 반입 때
     과잉 제외했던 것을 되돌린다
 
+- 2026-07-25 — 앱·트레이 아이콘을 클로애드 마스코트로 자체 제작. (CLAW-120)
+  - `scripts/export-app-icons.js` 신설 (`npm run export-app-icons`).
+    `themes/clawad/assets/clawad-idle.svg`에서 7종을 생성한다 —
+    `icon.png`·`dock-icon.png`(1024, Apple 그리드 80.5%), `icon.ico`(16~256 6단계),
+    `tray-icon.png`(32px), `tray-iconTemplate.png`·`@2x`(macOS 템플릿),
+    `source/dock-icon-fullbleed.png`(재프레이밍용 원본)
+  - 손으로 만든 PNG를 커밋하는 대신 스크립트로 둔 이유: 테마 아트가 바뀔 때
+    아이콘이 조용히 낡는 것을 막는다
+  - 소스가 합성 SVG(파츠를 외부 PNG로 참조)라 `nativeImage`·`sips`로는 래스터화할 수 없다.
+    Electron 오프스크린 창으로 렌더하며, 렌더용 HTML은 에셋 디렉터리 안에 써서
+    `file://` origin으로 로드해야 참조가 풀린다 (`data:` URL은 origin이 불투명해 실패)
+
+- 2026-07-25 — **에이전트 아이콘은 반입하지 않는다** (결정). (CLAW-120 / CLAW-94)
+  - upstream `assets/icons/agents/*.png`는 Anthropic·OpenAI·Google 등 20개 벤더 로고다.
+  - upstream 저작권 문제는 **아니다** — upstream도 소유를 주장하지 않는다
+    (`assets/LICENSE`: "Copyright is retained by the respective artists").
+  - 걸리는 것은 **제3자 상표**다. 오버레이의 펫이 광고 표시면이라 유료 광고 옆에
+    벤더 로고가 놓이는 구도가 되고, 이는 규칙 §7의 "공식 서비스 오인 금지"와 충돌한다.
+    변형 로고 사용을 금지하는 벤더 브랜드 가이드라인도 있다.
+  - 팬 프로젝트(upstream)와 상업 광고 매체(클로애드)는 같은 사용이라도 판단이 다르다.
+    리스크를 감수할 이유가 없어 사용하지 않는다.
+  - 예외: `openclaw.svg`는 MIT이므로 필요해지면 저작자 표시만으로 사용 가능하다
+    (`NOTICE.md` 참조).
+
 이후 변경은 이 목록에 계속 추가한다.
 
 ## 4b. 배포 전 반드시 처리할 것

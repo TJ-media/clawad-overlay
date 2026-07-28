@@ -7,6 +7,7 @@ const os = require("node:os");
 const path = require("node:path");
 
 const themeLoader = require("../src/theme-loader");
+const { DEFAULT_THEME_ID } = themeLoader;
 
 afterEach(() => {
   mock.restoreAll();
@@ -95,7 +96,7 @@ describe("theme-loader strict mode", () => {
   let fixture;
   before(() => {
     fixture = makeFixture([
-      { id: "clawd", builtin: true, json: validThemeJson({ name: "Clawd" }) },
+      { id: DEFAULT_THEME_ID, builtin: true, json: validThemeJson({ name: "Default" }) },
       { id: "good", builtin: true, json: validThemeJson({ name: "Good" }) },
       {
         id: "updatevisuals",
@@ -143,14 +144,14 @@ describe("theme-loader strict mode", () => {
   });
   after(() => fixture && fixture.cleanup());
 
-  it("lenient load falls back to clawd when theme missing", () => {
+  it("lenient load falls back to the default theme when theme missing", () => {
     const theme = themeLoader.loadTheme("doesNotExist");
-    assert.strictEqual(theme._id, "clawd");
+    assert.strictEqual(theme._id, DEFAULT_THEME_ID);
   });
 
   it("lenient load falls back when theme validation fails", () => {
     const theme = themeLoader.loadTheme("broken");
-    assert.strictEqual(theme._id, "clawd");
+    assert.strictEqual(theme._id, DEFAULT_THEME_ID);
   });
 
   it("strict load throws when theme is missing", () => {
@@ -208,7 +209,7 @@ describe("theme-loader trusted runtime and schema v1 defaults", () => {
   let fixture;
   before(() => {
     fixture = makeFixture([
-      { id: "clawd", builtin: true, json: validThemeJson({ name: "Clawd" }) },
+      { id: DEFAULT_THEME_ID, builtin: true, json: validThemeJson({ name: "Default" }) },
       { id: "old-schema", builtin: true, json: validThemeJson({ name: "Old Schema" }) },
       {
         id: "trusted",
@@ -366,7 +367,7 @@ describe("theme-loader getThemeMetadata", () => {
   before(() => {
     fixture = makeFixture([
       {
-        id: "clawd",
+        id: DEFAULT_THEME_ID,
         builtin: true,
         json: validThemeJson({ name: "Clawd", preview: "clawd-preview.svg" }),
       },
@@ -400,7 +401,7 @@ describe("theme-loader getThemeMetadata", () => {
     // selector chose `preview`, not `states.idle[0]`. A precise end-to-end
     // URL test would need writing a real asset, which is over-kill for the
     // contract under test.
-    const meta = themeLoader.getThemeMetadata("clawd");
+    const meta = themeLoader.getThemeMetadata(DEFAULT_THEME_ID);
     assert.ok(meta);
     // Internal contract: when the preview file isn't found, URL is null.
     // (Exercising the positive path requires writing assets; we trust
@@ -413,7 +414,7 @@ describe("theme-loader preview sound selection", () => {
   let fixture;
   before(() => {
     fixture = makeFixture([
-      { id: "clawd", builtin: true, json: validThemeJson({ name: "Clawd" }) },
+      { id: DEFAULT_THEME_ID, builtin: true, json: validThemeJson({ name: "Default" }) },
       {
         id: "preview-theme",
         builtin: false,
@@ -483,7 +484,7 @@ describe("theme-loader fileHitBoxes", () => {
   let fixture;
   before(() => {
     fixture = makeFixture([
-      { id: "clawd", builtin: true, json: validThemeJson({ name: "Clawd" }) },
+      { id: DEFAULT_THEME_ID, builtin: true, json: validThemeJson({ name: "Default" }) },
       {
         id: "filehit",
         builtin: true,
@@ -561,7 +562,7 @@ describe("theme-loader discovery", () => {
   before(() => {
     fixture = makeFixture([
       {
-        id: "clawd",
+        id: DEFAULT_THEME_ID,
         builtin: true,
         json: validThemeJson({ name: "Clawd" }),
       },
@@ -581,10 +582,10 @@ describe("theme-loader discovery", () => {
 
   it("skips the built-in template from discoverThemes and metadata scans", () => {
     const discovered = themeLoader.discoverThemes().map((theme) => theme.id);
-    assert.deepStrictEqual(discovered.sort(), ["clawd", "user-cat"]);
+    assert.deepStrictEqual(discovered.sort(), [DEFAULT_THEME_ID, "user-cat"].sort());
 
     const listed = themeLoader.listThemesWithMetadata().map((theme) => theme.id);
-    assert.deepStrictEqual(listed.sort(), ["clawd", "user-cat"]);
+    assert.deepStrictEqual(listed.sort(), [DEFAULT_THEME_ID, "user-cat"].sort());
   });
 });
 
@@ -593,7 +594,7 @@ describe("theme-loader external SVG sanitization", () => {
   before(() => {
     fixture = makeFixture([
       {
-        id: "clawd",
+        id: DEFAULT_THEME_ID,
         builtin: true,
         json: validThemeJson({ name: "Clawd" }),
       },
@@ -812,7 +813,7 @@ describe("theme-loader capability metadata", () => {
   let fixture;
   before(() => {
     fixture = makeFixture([
-      { id: "clawd", builtin: true, json: validThemeJson({ name: "Clawd" }) },
+      { id: DEFAULT_THEME_ID, builtin: true, json: validThemeJson({ name: "Default" }) },
       {
         id: "capTheme",
         builtin: true,
@@ -955,7 +956,7 @@ describe("theme-loader fallback + sleepSequence", () => {
       sleeping: { fallbackTo: "idle" },
     };
     fixture = makeFixture([
-      { id: "clawd", builtin: true, json: validThemeJson({ name: "Clawd" }) },
+      { id: DEFAULT_THEME_ID, builtin: true, json: validThemeJson({ name: "Default" }) },
       {
         id: "directSleep",
         builtin: true,
@@ -1142,7 +1143,7 @@ describe("theme-loader variant loading", () => {
       },
     });
     fixture = makeFixture([
-      { id: "clawd", builtin: true, json: validThemeJson({ name: "Clawd" }) },
+      { id: DEFAULT_THEME_ID, builtin: true, json: validThemeJson({ name: "Default" }) },
       { id: "host", builtin: true, json: variantTheme },
       {
         id: "novariants",
