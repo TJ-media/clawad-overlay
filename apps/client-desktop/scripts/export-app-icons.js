@@ -13,8 +13,13 @@
 // data: URL은 origin이 불투명해서 참조된 PNG를 불러오지 못한다.
 //
 // 사용법:
-//   node scripts/export-app-icons.js            생성
+//   node scripts/export-app-icons.js            전체 생성 (테마에서 렌더)
+//   node scripts/export-app-icons.js --derive    파생물만 생성 (커밋된 아이콘·원본에서)
 //   node scripts/export-app-icons.js --dry-run  생성물 목록만 출력
+//
+// --derive를 따로 둔 이유: Chromium 버전이 다르면 같은 SVG도 렌더 바이트가 미세하게 달라진다.
+// 트레이 깜빡임 아이콘·About 히어로처럼 기존 산출물에서 파생 가능한 것은 재렌더 없이 만들어,
+// 저장소에 이미 커밋된 아트와 어긋나지 않게 한다.
 
 const fs = require("fs");
 const os = require("os");
@@ -44,6 +49,18 @@ const APP_ICON_MARGIN = (1 - APP_ICON_CONTENT_RATIO) / 2;
 // 트레이는 이미 16pt로 작다. 앱 아이콘과 같은 여백을 주면 형태가 읽히지 않으므로
 // 최소한만 남긴다.
 const TRAY_MARGIN = 0.02;
+/**
+ * 트레이 깜빡임용 강조 점 (src/tray-flash-icon.js). 세션 HUD의 주의 색(#f59e0b)과 같은 값이라
+ * 트레이·HUD가 같은 신호 색을 쓴다.
+ */
+const FLASH_DOT_RGB = { r: 245, g: 158, b: 11 };
+const FLASH_DOT_DIAMETER_RATIO = 0.42;
+/**
+ * About·튜토리얼 히어로 SVG. 마스코트가 픽셀아트라 격자 사각형으로 옮겨도 손실이 없고,
+ * 외부 파일·data URI 없이 자체 완결된 SVG가 된다(렌더러에 인라인으로 주입되므로 필수).
+ */
+const HERO_SVG_NAME = "clawad-about-hero.svg";
+const HERO_GRID = 64;
 
 const ALPHA_THRESHOLD = 8;     // 이 값 이하는 배경으로 본다
 
@@ -104,6 +121,80 @@ function squareCentered(image, outSize, marginRatio) {
     src.data.copy(out, dstStart, srcStart, srcStart + drawW * 4);
   }
   return nativeImage.createFromBitmap(out, { width: outSize, height: outSize });
+}
+
+/**
+ * 트레이 깜빡임 변형: 기본 트레이 아이콘 우하단에 강조 점을 찍는다.
+ * 없으면 loadTrayFlashIcon이 null을 돌려 깜빡임만 비활성되므로, 파일이 있어야 기능이 산다.
+ */
+function withFlashDot(image) {
+  const bmp = bitmapOf(image);
+  const out = Buffer.from(bmp.data);
+  const diameter = Math.max(3, Math.round(Math.min(bmp.width, bmp.height) * FLASH_DOT_DIAMETER_RATIO));
+  const radius = diameter / 2;
+  const centerX = bmp.width - radius - 1;
+  const centerY = bmp.height - radius - 1;
+  for (let y = 0; y < bmp.height; y++) {
+    for (let x = 0; x < bmp.width; x++) {
+      const distance = Math.hypot(x + 0.5 - centerX, y + 0.5 - centerY);
+      if (distance > radius) continue;
+      // 경계 1px만 알파로 눌러 32px에서도 계단이 두드러지지 않게 한다.
+      const alpha = Math.round(255 * Math.min(1, radius - distance));
+      if (alpha <= 0) continue;
+      const index = (y * bmp.width + x) * 4;
+      out[index] = FLASH_DOT_RGB.b;
+      out[index + 1] = FLASH_DOT_RGB.g;
+      out[index + 2] = FLASH_DOT_RGB.r;
+      out[index + 3] = Math.max(out[index + 3], alpha);
+    }
+  }
+  return nativeImage.createFromBitmap(out, { width: bmp.width, height: bmp.height });
+}
+
+function hex(value) {
+  return value.toString(16).padStart(2, "0");
+}
+
+/**
+ * 렌더 결과를 격자로 샘플링해 픽셀당 사각형 SVG를 만든다.
+ * 가로 연속 구간은 하나의 rect로 합쳐 파일 크기를 줄이고, crispEdges로 이음새를 없앤다.
+ * 외부 참조가 없어야 About 화면에 인라인으로 주입할 수 있다(테마 SVG는 외부 PNG를 참조해 쓸 수 없다).
+ */
+function pixelGridSvg(image, grid) {
+  const bmp = bitmapOf(image);
+  const bounds = contentBounds(bmp);
+  if (!bounds) throw new Error("렌더 결과가 전부 투명하다 — SVG 참조가 풀리지 않았을 수 있다");
+  const cell = Math.max(bounds.width, bounds.height) / grid;
+  const originX = bounds.x + bounds.width / 2 - (cell * grid) / 2;
+  const originY = bounds.y + bounds.height / 2 - (cell * grid) / 2;
+
+  const sample = (gx, gy) => {
+    const sx = Math.min(bmp.width - 1, Math.max(0, Math.round(originX + cell * (gx + 0.5))));
+    const sy = Math.min(bmp.height - 1, Math.max(0, Math.round(originY + cell * (gy + 0.5))));
+    const index = (sy * bmp.width + sx) * 4;
+    if (bmp.data[index + 3] <= ALPHA_THRESHOLD) return null;
+    return `#${hex(bmp.data[index + 2])}${hex(bmp.data[index + 1])}${hex(bmp.data[index])}`;
+  };
+
+  const rects = [];
+  for (let gy = 0; gy < grid; gy++) {
+    let runStart = 0;
+    let runColor = null;
+    for (let gx = 0; gx <= grid; gx++) {
+      const color = gx < grid ? sample(gx, gy) : null;
+      if (color === runColor) continue;
+      if (runColor) rects.push(`<rect x="${runStart}" y="${gy}" width="${gx - runStart}" height="1" fill="${runColor}"/>`);
+      runStart = gx;
+      runColor = color;
+    }
+  }
+
+  return [
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${grid} ${grid}" shape-rendering="crispEdges" role="img" aria-label="클로애드 마스코트">`,
+    ...rects.map((rect) => `  ${rect}`),
+    "</svg>",
+    "",
+  ].join("\n");
 }
 
 /**
@@ -196,9 +287,47 @@ async function renderMaster() {
   }
 }
 
+/** 이미 저장돼 있는 산출물을 읽는다. 없으면 null. */
+function loadExisting(file) {
+  if (!fs.existsSync(file)) return null;
+  const image = nativeImage.createFromPath(file);
+  return image && !image.isEmpty() ? image : null;
+}
+
+/**
+ * 파생 산출물만 다시 만든다 (`--derive`).
+ *
+ * 렌더는 Electron·Chromium 버전에 따라 바이트가 미세하게 달라진다. 저장소에 이미 아이콘이
+ * 있으면 그것을 입력으로 삼아, 커밋된 아트와 어긋나지 않게 한다 —
+ * 깜빡임 아이콘은 기본 트레이 아이콘에서, 히어로 SVG는 풀블리드 원본에서 파생한다.
+ */
+function deriveOutputs() {
+  const trayIcon = loadExisting(path.join(OUT_DIR, "tray-icon.png"));
+  const fullBleed = loadExisting(path.join(SOURCE_DIR, "dock-icon-fullbleed.png"));
+  if (!trayIcon || !fullBleed) {
+    throw new Error("--derive는 assets/tray-icon.png과 assets/source/dock-icon-fullbleed.png이 있어야 한다");
+  }
+  return [
+    [path.join(OUT_DIR, "tray-icon-flash.png"), withFlashDot(trayIcon).toPNG()],
+    [path.join(OUT_DIR, "svg", HERO_SVG_NAME), Buffer.from(pixelGridSvg(fullBleed, HERO_GRID), "utf8")],
+  ];
+}
+
 async function main() {
   const dryRun = process.argv.includes("--dry-run");
   const written = [];
+
+  if (process.argv.includes("--derive")) {
+    for (const [target, buffer] of deriveOutputs()) {
+      if (!dryRun) {
+        fs.mkdirSync(path.dirname(target), { recursive: true });
+        fs.writeFileSync(target, buffer);
+      }
+      written.push([path.relative(ROOT, target), buffer.length]);
+    }
+    for (const [rel, bytes] of written) console.log(`wrote ${rel} (${bytes} bytes)`);
+    return;
+  }
 
   const master = await renderMaster();
   const squared = squareCentered(master, APP_ICON_SIZE, APP_ICON_MARGIN);
@@ -218,6 +347,14 @@ async function main() {
     [
       path.join(OUT_DIR, "tray-icon.png"),
       squareCentered(master, TRAY_PIXEL_SIZE, TRAY_MARGIN).toPNG(),
+    ],
+    [
+      path.join(OUT_DIR, "tray-icon-flash.png"),
+      withFlashDot(squareCentered(master, TRAY_PIXEL_SIZE, TRAY_MARGIN)).toPNG(),
+    ],
+    [
+      path.join(OUT_DIR, "svg", HERO_SVG_NAME),
+      Buffer.from(pixelGridSvg(master, HERO_GRID), "utf8"),
     ],
     [path.join(OUT_DIR, "tray-iconTemplate.png"), trayTemplate.toPNG()],
     [path.join(OUT_DIR, "tray-iconTemplate@2x.png"), trayTemplate2x.toPNG()],
