@@ -63,8 +63,8 @@
   "license": "AGPL-3.0-only",
   "type": "commonjs",
   "build": {
-    "appId": "com.clawd.on-desk",
-    "productName": "Clawd on Desk",
+    "appId": "ai.clawad.overlay",
+    "productName": "Claw-Ad",
     "protocols": [
       {
         "name": "Clawd Import Protocol",

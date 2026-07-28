@@ -217,7 +217,7 @@ module.exports = function initMenu(ctx) {
       iconPath: path.join(__dirname, "../assets/tray-icon.png"),
     });
     ctx.tray = new Tray(icon);
-    ctx.tray.setToolTip("Clawd Desktop Pet");
+    ctx.tray.setToolTip("Claw-Ad");
     buildTrayMenu();
   }
 
@@ -387,7 +387,7 @@ module.exports = function initMenu(ctx) {
     // the "persistent helper window" design — every right-click ends up
     // re-spawning a renderer process. Load a minimal data: URL so the
     // renderer has a real document and stays alive across menu invocations.
-    ctx.contextMenuOwner.loadURL("data:text/html,%3C!doctype%20html%3E");
+    ctx.contextMenuOwner.loadURL("data:text/html,%3C!doctype%20html%3E%3Ctitle%3EClaw-Ad%3C/title%3E");
 
     // macOS: ensure owner can appear on fullscreen Spaces
     ctx.reapplyMacVisibility();
