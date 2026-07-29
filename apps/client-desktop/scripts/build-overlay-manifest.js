@@ -80,8 +80,23 @@ if (!published.length) {
 const missing = required.filter((key) => !artifacts[key]);
 if (missing.length) fail(`요구한 산출물이 dist/에 없습니다: ${missing.join(', ')}`);
 
+// 0.1.12까지 배포된 CLI는 artifacts를 모르고 최상위의 평평한 필드만 읽는다. 그 CLI가
+// 이 매니페스트를 만나도 Windows 설치가 계속되도록 win32-x64를 최상위에도 복제한다.
+// 새 CLI는 artifacts를 먼저 보므로 이 필드에 영향받지 않는다. 배포된 CLI가 모두
+// 교체되면 지운다.
+const legacy = artifacts['win32-x64'];
+const legacyFields = legacy ? {
+  installerUrl: legacy.installerUrl,
+  sha256: legacy.sha256,
+  bytes: legacy.bytes,
+  platform: 'win32',
+  arch: 'x64',
+  silentArgs: legacy.silentArgs,
+} : {};
+
 const manifest = {
   version,
+  ...legacyFields,
   // AGPL: 우리가 이 바이너리를 사용자에게 전달하므로 대응 소스 위치를 함께 알린다.
   sourceUrl: `https://github.com/${REPO_SLUG}`,
   license: 'AGPL-3.0-only',

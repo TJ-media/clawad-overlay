@@ -113,6 +113,34 @@ test("--require를 모두 만족하면 성공한다", () => {
   assert.strictEqual(run(dist, ["--require=win32-x64,darwin-arm64"]).status, 0);
 });
 
+test("예전 CLI를 위해 win32-x64를 최상위에도 복제한다", () => {
+  // 0.1.12까지 배포된 CLI는 artifacts를 모르고 최상위 평평한 필드만 읽는다.
+  const dist = withDist({ [WIN]: "win payload", [MAC_ARM]: "mac arm payload" });
+
+  assert.strictEqual(run(dist).status, 0);
+
+  const manifest = readManifest(dist);
+  const entry = manifest.artifacts["win32-x64"];
+  assert.strictEqual(manifest.installerUrl, entry.installerUrl);
+  assert.strictEqual(manifest.sha256, entry.sha256);
+  assert.strictEqual(manifest.bytes, entry.bytes);
+  assert.strictEqual(manifest.platform, "win32");
+  assert.strictEqual(manifest.arch, "x64");
+  assert.deepStrictEqual(manifest.silentArgs, ["/S"]);
+});
+
+test("Windows 산출물이 없으면 최상위 평평한 필드도 없다", () => {
+  // macOS만 올린 릴리스를 예전 CLI가 만나면 "산출물 없음"으로 실패해야 한다.
+  // 엉뚱한 URL을 최상위에 남겨 mac zip을 exe로 실행하게 두지 않는다.
+  const dist = withDist({ [MAC_ARM]: "mac arm payload" });
+
+  assert.strictEqual(run(dist).status, 0);
+
+  const manifest = readManifest(dist);
+  assert.ok(!("installerUrl" in manifest), "최상위에 installerUrl이 남았다");
+  assert.ok(!("platform" in manifest), "최상위에 platform이 남았다");
+});
+
 test("산출물이 하나도 없으면 실패한다", () => {
   const result = run(withDist({}));
 
