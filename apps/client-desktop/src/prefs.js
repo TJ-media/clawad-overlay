@@ -143,9 +143,13 @@ const SCHEMA = {
   sessionHudShowContextUsage: { type: "boolean", default: true },
   sessionHudShowQuota: { type: "boolean", default: true },
   // Claude Code exposes subscription limits only through its visible,
-  // single-slot statusline. Keep collection opt-in so a fresh Clawd install
-  // never changes the user's terminal UI without an explicit choice.
-  claudeQuotaCollectionEnabled: { type: "boolean", default: false },
+  // single-slot statusline. Upstream kept this opt-in because taking that slot
+  // changes the user's terminal UI. ClawAd ships it on by default (CLAW-136):
+  // the CLI install flow discloses it up front, registration only ever takes an
+  // *empty* slot (a user's own statusline is left untouched), the values stay on
+  // the device, and uninstall restores the slot via hooks/cleanup-integrations.js.
+  // Without this the quota ring stays empty for everyone who never opens Settings.
+  claudeQuotaCollectionEnabled: { type: "boolean", default: true },
   quotaMergeSources: { type: "boolean", default: false },
   sessionHudCleanupDetached: { type: "boolean", default: true },
   sessionHudPinned: { type: "boolean", default: false },

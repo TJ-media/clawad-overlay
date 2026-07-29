@@ -54,9 +54,14 @@ function readPolicyCache(dataDir) {
   const impression = cache.impression;
   if (!overlay || !impression) return null;
   if (!positiveInt(overlay.adRotateMs) || !positiveInt(overlay.idleThresholdMs) || !positiveInt(overlay.maxWidthPx)) return null;
+  // 인정 구간 사이 간격 (CLAW-135, contract §3.2). 정책값이므로 추측하지 않는다 —
+  // 없거나 이상하면 광고 기능을 켜지 않는다. 0으로 넘겨짚으면 연속 노출이 서버에서
+  // 서로 CONCURRENT_USER_IMPRESSION으로 걸려 조용히 적립이 새어 나간다.
+  if (!positiveInt(overlay.adGapMs)) return null;
   if (!positiveInt(impression.minViewMs)) return null;
   return {
     adRotateMs: overlay.adRotateMs,
+    adGapMs: overlay.adGapMs,
     idleThresholdMs: overlay.idleThresholdMs,
     maxWidthPx: overlay.maxWidthPx,
     minViewMs: impression.minViewMs,
@@ -182,6 +187,12 @@ function createAdRuntime(options = {}) {
   let current = null;
   let currentBundle = null;
   let collectorBusy = false;
+  /**
+   * 직전에 스풀로 남긴 인정 구간의 종료 시각 (CLAW-135). 다음 구간의 시작을 여기서
+   * adGapMs 이후로 미뤄 서버의 동시 노출 판정에 걸리지 않게 한다. 스풀에 남기지 못한
+   * 구간(최소 시청 시간 미달)은 서버가 본 적이 없으므로 기준점을 갱신하지 않는다.
+   */
+  let lastSpooledEndAt = null;
 
   function finishCurrent(now, policy) {
     if (!current) return null;
@@ -192,8 +203,23 @@ function createAdRuntime(options = {}) {
     // 최종 인정 판정은 clawad 수거와 서버가 한다.
     if (!policy || finished.displayEndedAt - finished.displayStartedAt < policy.minViewMs) return null;
     const file = writeSpoolEvent(dataDir, finished);
-    if (file) triggerCollector();
+    if (!file) return null;
+    lastSpooledEndAt = finished.displayEndedAt;
+    triggerCollector();
     return file;
+  }
+
+  /**
+   * 인정을 요청할 구간의 시작 (CLAW-135). 실제 렌더는 now에 시작하지만, 직전 인정 구간과
+   * adGapMs 이상 떨어지도록 시작점만 미룬다. 실제 표시 구간의 부분집합이라 과대 신고가 아니고,
+   * renderStarted는 실제 첫 렌더 시각을 그대로 유지한다(CLAW-71 퍼널 진단).
+   *
+   * 표시 자체는 끊지 않는다 — 광고창이 사라졌다 다시 뜨면 사용자 피로가 생기므로
+   * 화면에는 틈을 만들지 않고 문구만 바뀐다. 틈은 인정 구간에만 있다.
+   */
+  function countedStartAt(now, policy) {
+    if (lastSpooledEndAt === null) return now;
+    return Math.max(now, lastSpooledEndAt + policy.adGapMs);
   }
 
   function triggerCollector() {
@@ -229,8 +255,10 @@ function createAdRuntime(options = {}) {
       finishCurrent(now, policy);
       return null;
     }
-    // 표시 중인 광고는 회전 주기를 채운다.
-    if (current && currentBundle && now - current.displayStartedAt < policy.adRotateMs) {
+    // 표시 중인 광고는 회전 주기를 채운다. 기준은 인정 구간 시작이 아니라 **실제 렌더 시각**이다
+    // (CLAW-135) — 인정 구간 시작은 adGapMs만큼 뒤로 밀리므로, 그걸 기준으로 삼으면 화면
+    // 회전 주기가 같이 늘어난다. 화면 리듬은 adRotateMs 그대로 유지한다.
+    if (current && currentBundle && now - current.renderStarted < policy.adRotateMs) {
       return displayPayload(currentBundle, policy.maxWidthPx);
     }
     finishCurrent(now, policy);
@@ -239,7 +267,7 @@ function createAdRuntime(options = {}) {
     if (!bundle) return null;
     usedTokens.add(bundle.serveToken);
     currentBundle = bundle;
-    current = { serveToken: bundle.serveToken, renderStarted: now, displayStartedAt: now };
+    current = { serveToken: bundle.serveToken, renderStarted: now, displayStartedAt: countedStartAt(now, policy) };
     return displayPayload(bundle, policy.maxWidthPx);
   }
 
