@@ -97,7 +97,6 @@ logs/
 bin/cc-connect-clawd/*/cc-connect-clawd
 bin/cc-connect-clawd/*/cc-connect-clawd.exe
 !bin/cc-connect-clawd/
-!bin/cc-connect-clawd/README.md
 
 # GIF recording tools (not part of main project)
 scripts/*
@@ -109,9 +108,8 @@ scripts/*
 !scripts/create-theme.js
 !scripts/export-agent-icons.js
 !scripts/export-app-icons.js
-!scripts/verify-sidecar-binaries.js
 !scripts/verify-electron-install.js
-!scripts/fetch-sidecar-binaries.js
+!scripts/build-overlay-manifest.js
 
 # oh-my-cursor state
 .omc/

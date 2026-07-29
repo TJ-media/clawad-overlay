@@ -35,7 +35,7 @@ Download and smoke-test the draft release assets before publishing the draft.
 If the draft is wrong, fix the issue before publishing; do not publish a known
 bad draft release.
 
-### v0.13.0 Draft Smoke Checklist
+### Draft Smoke Checklist
 
 Use the draft release installer or package artifact, not `npm start`. Windows
 required items are the primary publish gate. If macOS or Linux hardware is not
@@ -45,7 +45,7 @@ notes.
 Before launching:
 
 - Download the draft release asset for the platform being tested.
-- Confirm the packaged app shows `0.13.0` metadata.
+- Confirm the packaged app metadata matches the version being released.
 - Confirm packaged resources include `app.asar.unpacked/hooks`,
   `app.asar.unpacked/agents`, `app.asar.unpacked/extensions`,
   and `app.asar.unpacked/themes`.
@@ -63,9 +63,9 @@ Before launching:
 Required all-platform checks:
 
 - Fresh install, launch, pet appears, no error dialog.
-- Upgrade install over v0.12.0, launch, pet appears, no error dialog. Existing
+- Upgrade install over the previous release, launch, pet appears, no error dialog. Existing
   agent installation/enabled flags and user theme/animation choices remain intact.
-- Settings -> About shows `v0.13.0`, sourced from `app.getVersion()`.
+- Settings -> About shows the released version, sourced from `app.getVersion()`.
 - First-run tutorial opens once for a fresh profile; Finish, Skip, and OS close
   each persist `tutorialSeen=true` and do not reopen on restart.
 - Upgrade profile with no `tutorialSeen` sees the tutorial once; an already-seen
@@ -74,9 +74,8 @@ Required all-platform checks:
   macOS installs default to pet + menu-bar accessory with no Dock tile.
 - Settings -> General / Agents / Animation & Sound render correctly in all five
   languages, including sidebar SVG icons and the folded Animation Map subtab.
-- Settings -> About contributors include the seven v0.13.0 first-time
-  contributors: `jiaxuan1101`, `kkirito16`, `200780381`, `Dxy2326`,
-  `lurui1997`, `JesmonX`, and `chen86860`.
+- Settings -> About 하단 "원본 프로젝트" 절에 상류 유지보수자·기여자 목록이 렌더된다
+  (CLAW-131). 상단 정보는 우리 저장소·저작권이어야 한다.
 - Reinstall one existing hook-based agent, such as Codex, and confirm the
   packaged hook script can `require()` its dependencies.
 - Run one real Claude Code or Codex session and confirm the pet reacts to state
@@ -113,7 +112,7 @@ Recommended all-platform checks:
 - Right-click Hide pet / Show pet still works; while hidden, a newly arriving
   permission request still shows a bubble, by design.
 - Settings -> About -> Check for updates completes without an error.
-- Update labels never show a duplicated prefix such as `vv0.13.0`.
+- Update labels never show a duplicated prefix such as `vv0.1.0`.
 
 Windows checks:
 

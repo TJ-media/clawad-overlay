@@ -1,6 +1,6 @@
 {
   "name": "clawd-on-desk",
-  "version": "0.13.0",
+  "version": "0.1.0",
   "description": "A desktop pet that reacts to your Claude Code sessions in real-time.",
   "main": "src/main.js",
   "scripts": {
@@ -12,6 +12,7 @@
     "build:mac": "electron-builder --mac",
     "build:linux": "electron-builder --linux",
     "build:all": "electron-builder --win --mac --linux",
+    "release:manifest": "node scripts/build-overlay-manifest.js",
     "verify:electron": "node scripts/verify-electron-install.js",
     "postinstall": "node scripts/verify-electron-install.js --context postinstall",
     "test": "node test/run-tests.js",
