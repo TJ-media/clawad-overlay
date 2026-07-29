@@ -41,6 +41,7 @@ docs/**
 !docs/project/
 !docs/project/agent-runtime-architecture.md
 !docs/project/release-process.md
+!docs/project/code-signing.md
 !docs/project/theme-state-ui.md
 !docs/cloudling/
 !docs/cloudling/specs/
@@ -110,6 +111,7 @@ scripts/*
 !scripts/export-app-icons.js
 !scripts/verify-electron-install.js
 !scripts/build-overlay-manifest.js
+!scripts/verify-signature.js
 
 # oh-my-cursor state
 .omc/
