@@ -17,14 +17,14 @@ const {
   safeText,
 } = require("../src/clawad-ad-runtime");
 
-const POLICY = { adRotateMs: 15000, idleThresholdMs: 60000, maxWidthPx: 360, minViewMs: 5000 };
+const POLICY = { adRotateMs: 15000, adGapMs: 3000, idleThresholdMs: 60000, maxWidthPx: 360, minViewMs: 5000 };
 
 function makeData(overrides = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "clawad-ad-"));
   if (overrides.policy !== null) {
     fs.writeFileSync(path.join(dir, "overlay-policy.json"), JSON.stringify(overrides.policy || {
       version: 1,
-      overlay: { adRotateMs: POLICY.adRotateMs, idleThresholdMs: POLICY.idleThresholdMs, maxWidthPx: POLICY.maxWidthPx },
+      overlay: { adRotateMs: POLICY.adRotateMs, adGapMs: POLICY.adGapMs, idleThresholdMs: POLICY.idleThresholdMs, maxWidthPx: POLICY.maxWidthPx },
       impression: { minViewMs: POLICY.minViewMs },
       updatedAt: Date.now(),
     }));
@@ -124,6 +124,82 @@ test("표시가 끝나면 표시 구간을 스풀 파일로 남긴다 — 8필�
   }
 });
 
+// 서버는 동시 노출 판정 구간을 concurrentToleranceMs만큼 양쪽으로 넓힌다. 인정 구간이
+// 0ms 간격으로 붙으면 연속으로 본 광고가 서로 CONCURRENT_USER_IMPRESSION으로 걸린다 (CLAW-135).
+test("연속 인정 구간 사이에 adGapMs 이상 간격을 둔다 (CLAW-135)", () => {
+  const data = makeData();
+  const { runtime } = runtimeWithRecorder(data);
+  const start = Date.now();
+
+  runtime.tick(start);
+  runtime.tick(start + POLICY.adRotateMs);
+  runtime.tick(start + POLICY.adRotateMs * 2);
+
+  const spooled = spoolContents(data).sort((a, b) => a.displayStartedAt - b.displayStartedAt);
+  assert.strictEqual(spooled.length, 2);
+  const gap = spooled[1].displayStartedAt - spooled[0].displayEndedAt;
+  assert.strictEqual(gap, POLICY.adGapMs, "직전 인정 구간 종료로부터 adGapMs만큼 미뤄야 한다");
+  // 인정 구간은 실제 표시 구간의 부분집합이다 — 과대 신고가 아니다.
+  assert.ok(spooled[1].renderStarted <= spooled[1].displayStartedAt);
+  assert.strictEqual(spooled[1].renderStarted, start + POLICY.adRotateMs, "실제 첫 렌더 시각은 그대로다");
+  assert.strictEqual(spooled[1].displayEndedAt - spooled[1].displayStartedAt, POLICY.adRotateMs - POLICY.adGapMs);
+});
+
+// 틈은 인정 구간에만 둔다. 광고창이 사라졌다 다시 뜨면 사용자 피로가 생기므로
+// 화면에는 틈을 만들지 않고 문구만 바뀐다 (CLAW-135).
+test("인정 구간 간격이 화면 회전 주기를 늘리지 않는다 (CLAW-135)", () => {
+  const data = makeData();
+  const { runtime } = runtimeWithRecorder(data);
+  const start = Date.now();
+
+  runtime.tick(start);
+  runtime.tick(start + POLICY.adRotateMs); // token.b로 회전
+  // 간격이 회전 기준에 섞이면 이 시점에 아직 token.b가 남아 있다.
+  assert.strictEqual(runtime.tick(start + POLICY.adRotateMs * 2 - 1).text, "광고 token.b");
+  // 회전 시점에도 표시는 끊기지 않는다 — 후보가 없을 때만 null이다.
+  assert.strictEqual(runtime.tick(start + POLICY.adRotateMs + POLICY.adGapMs).text, "광고 token.b",
+    "간격 구간에도 광고는 계속 떠 있어야 한다");
+});
+
+// adGapMs는 선택 항목이다. 오버레이는 자동 업데이트되고 CLI는 수동 업데이트라
+// 새 오버레이 + 구 CLI 조합이 실제로 생긴다. 그때 광고를 끄면 적립이 영구히 0이 된다 (CLAW-135).
+test("adGapMs가 없는 구 CLI 캐시에서도 광고는 계속 표시한다 (CLAW-135)", () => {
+  const data = makeData({
+    policy: {
+      version: 1,
+      overlay: { adRotateMs: POLICY.adRotateMs, idleThresholdMs: POLICY.idleThresholdMs, maxWidthPx: POLICY.maxWidthPx },
+      impression: { minViewMs: POLICY.minViewMs },
+      updatedAt: Date.now(),
+    },
+  });
+  const { runtime } = runtimeWithRecorder(data);
+  const start = Date.now();
+
+  assert.strictEqual(runtime.tick(start).text, "광고 token.a", "구 CLI라고 광고를 끄면 안 된다");
+  runtime.tick(start + POLICY.adRotateMs);
+  runtime.tick(start + POLICY.adRotateMs * 2);
+
+  // 간격 없이(= 계약 이전 판 그대로) 동작한다. CLI가 올라오면 그때부터 간격이 생긴다.
+  const spooled = spoolContents(data).sort((a, b) => a.displayStartedAt - b.displayStartedAt);
+  assert.strictEqual(spooled.length, 2);
+  assert.strictEqual(spooled[1].displayStartedAt - spooled[0].displayEndedAt, 0);
+});
+
+test("adGapMs 값이 들어 있는데 형식이 틀리면 손상된 캐시로 본다 (CLAW-135)", () => {
+  for (const adGapMs of [0, -1, 1.5, "3000"]) {
+    const data = makeData({
+      policy: {
+        version: 1,
+        overlay: { adRotateMs: POLICY.adRotateMs, adGapMs, idleThresholdMs: POLICY.idleThresholdMs, maxWidthPx: POLICY.maxWidthPx },
+        impression: { minViewMs: POLICY.minViewMs },
+        updatedAt: Date.now(),
+      },
+    });
+    const { runtime } = runtimeWithRecorder(data);
+    assert.strictEqual(runtime.tick(Date.now()), null, `adGapMs=${JSON.stringify(adGapMs)}는 거절해야 한다`);
+  }
+});
+
 test("최소 시청 시간에 못 미친 표시 구간은 스풀을 만들지 않는다", () => {
   const data = makeData();
   const { runtime } = runtimeWithRecorder(data);
@@ -171,7 +247,7 @@ test("정책 캐시가 없으면 광고를 표시하지 않는다 — 정책값�
 test("정책 캐시의 값이 이상하면 무효로 본다", () => {
   assert.strictEqual(readPolicyCache(makeData({ policy: { version: 2, overlay: {}, impression: {} } })), null, "버전 불일치");
   assert.strictEqual(readPolicyCache(makeData({
-    policy: { version: 1, overlay: { adRotateMs: 0, idleThresholdMs: 1, maxWidthPx: 1 }, impression: { minViewMs: 1 } },
+    policy: { version: 1, overlay: { adRotateMs: 0, adGapMs: 1, idleThresholdMs: 1, maxWidthPx: 1 }, impression: { minViewMs: 1 } },
   })), null, "양의 정수가 아닌 값");
   assert.deepStrictEqual(readPolicyCache(makeData()), POLICY);
 });

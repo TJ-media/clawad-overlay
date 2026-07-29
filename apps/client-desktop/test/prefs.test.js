@@ -58,7 +58,9 @@ describe("prefs.getDefaults", () => {
     assert.strictEqual(d.sessionHudShowElapsed, false);
     assert.strictEqual(d.sessionHudShowContextUsage, true);
     assert.strictEqual(d.sessionHudShowQuota, true);
-    assert.strictEqual(d.claudeQuotaCollectionEnabled, false);
+    // ClawAd는 기본 활성이다 (CLAW-136). 빈 슬롯만 점유하고, 값은 단말을 벗어나지 않으며,
+    // 제거 시 슬롯을 되돌린다. 기본이 꺼져 있으면 쿼터 링이 빈 채로 남는다.
+    assert.strictEqual(d.claudeQuotaCollectionEnabled, true);
     assert.strictEqual(d.quotaMergeSources, false);
     assert.strictEqual(d.sessionHudCleanupDetached, true);
     assert.strictEqual("sessionHudAutoHide" in d, false);
