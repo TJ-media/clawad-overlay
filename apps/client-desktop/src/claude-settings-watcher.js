@@ -376,7 +376,7 @@ function createClaudeSettingsWatcher(ctx = {}) {
         source: reason,
         issueSignature: null,
         issues: report.issues,
-        message: "Claude hook source script is missing; reinstall or re-extract Clawd",
+        message: "Claude hook source script is missing; reinstall or re-extract Claw-Ad",
       });
       scheduleHealthCheck(healthCheckIntervalMs, "periodic-health");
       return;
