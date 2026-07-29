@@ -161,7 +161,9 @@ test("인정 구간 간격이 화면 회전 주기를 늘리지 않는다 (CLAW-
     "간격 구간에도 광고는 계속 떠 있어야 한다");
 });
 
-test("정책 캐시에 adGapMs가 없으면 광고 기능을 켜지 않는다 (CLAW-135)", () => {
+// adGapMs는 선택 항목이다. 오버레이는 자동 업데이트되고 CLI는 수동 업데이트라
+// 새 오버레이 + 구 CLI 조합이 실제로 생긴다. 그때 광고를 끄면 적립이 영구히 0이 된다 (CLAW-135).
+test("adGapMs가 없는 구 CLI 캐시에서도 광고는 계속 표시한다 (CLAW-135)", () => {
   const data = makeData({
     policy: {
       version: 1,
@@ -171,8 +173,31 @@ test("정책 캐시에 adGapMs가 없으면 광고 기능을 켜지 않는다 (C
     },
   });
   const { runtime } = runtimeWithRecorder(data);
+  const start = Date.now();
 
-  assert.strictEqual(runtime.tick(Date.now()), null, "정책값을 추측하지 않는다");
+  assert.strictEqual(runtime.tick(start).text, "광고 token.a", "구 CLI라고 광고를 끄면 안 된다");
+  runtime.tick(start + POLICY.adRotateMs);
+  runtime.tick(start + POLICY.adRotateMs * 2);
+
+  // 간격 없이(= 계약 이전 판 그대로) 동작한다. CLI가 올라오면 그때부터 간격이 생긴다.
+  const spooled = spoolContents(data).sort((a, b) => a.displayStartedAt - b.displayStartedAt);
+  assert.strictEqual(spooled.length, 2);
+  assert.strictEqual(spooled[1].displayStartedAt - spooled[0].displayEndedAt, 0);
+});
+
+test("adGapMs 값이 들어 있는데 형식이 틀리면 손상된 캐시로 본다 (CLAW-135)", () => {
+  for (const adGapMs of [0, -1, 1.5, "3000"]) {
+    const data = makeData({
+      policy: {
+        version: 1,
+        overlay: { adRotateMs: POLICY.adRotateMs, adGapMs, idleThresholdMs: POLICY.idleThresholdMs, maxWidthPx: POLICY.maxWidthPx },
+        impression: { minViewMs: POLICY.minViewMs },
+        updatedAt: Date.now(),
+      },
+    });
+    const { runtime } = runtimeWithRecorder(data);
+    assert.strictEqual(runtime.tick(Date.now()), null, `adGapMs=${JSON.stringify(adGapMs)}는 거절해야 한다`);
+  }
 });
 
 test("최소 시청 시간에 못 미친 표시 구간은 스풀을 만들지 않는다", () => {

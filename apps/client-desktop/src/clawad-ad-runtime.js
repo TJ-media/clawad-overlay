@@ -54,14 +54,21 @@ function readPolicyCache(dataDir) {
   const impression = cache.impression;
   if (!overlay || !impression) return null;
   if (!positiveInt(overlay.adRotateMs) || !positiveInt(overlay.idleThresholdMs) || !positiveInt(overlay.maxWidthPx)) return null;
-  // 인정 구간 사이 간격 (CLAW-135, contract §3.2). 정책값이므로 추측하지 않는다 —
-  // 없거나 이상하면 광고 기능을 켜지 않는다. 0으로 넘겨짚으면 연속 노출이 서버에서
-  // 서로 CONCURRENT_USER_IMPRESSION으로 걸려 조용히 적립이 새어 나간다.
-  if (!positiveInt(overlay.adGapMs)) return null;
   if (!positiveInt(impression.minViewMs)) return null;
+  // 인정 구간 사이 간격 (CLAW-135, contract §2.1). **선택 항목이다.**
+  //
+  // 다른 정책값과 달리 없을 때 광고를 끄지 않는다. 이 값은 adGapMs를 담기 시작한 CLI가
+  // 써주는데, 오버레이는 자동 업데이트되고 CLI는 수동 업데이트라(`clawad update`) 새 오버레이 +
+  // 구 CLI 조합이 실제로 생긴다. 그때 광고를 끄면 사용자는 이유도 모른 채 적립이 영구히 0이 된다.
+  //
+  // 없을 때의 0은 "추측한 정책값"이 아니라 계약 이전 판(간격 없음)의 동작 그대로다. 이 값은
+  // 우리가 신고하는 구간을 **줄이기만** 하므로, 없다고 해서 인정되면 안 될 노출이 인정되지 않는다.
+  // 그래서 다른 값들과 달리 열어두는 것이 안전하다. 반대로 값이 들어 있는데 형식이 틀리면
+  // 손상된 캐시이므로 그때는 광고를 켜지 않는다.
+  if (overlay.adGapMs !== undefined && !positiveInt(overlay.adGapMs)) return null;
   return {
     adRotateMs: overlay.adRotateMs,
-    adGapMs: overlay.adGapMs,
+    adGapMs: overlay.adGapMs === undefined ? 0 : overlay.adGapMs,
     idleThresholdMs: overlay.idleThresholdMs,
     maxWidthPx: overlay.maxWidthPx,
     minViewMs: impression.minViewMs,
