@@ -7357,6 +7357,70 @@ describe("settings renderer browser environment", () => {
     assert.strictEqual(detectCalls.length, 2, "no further fetch after the scan settles");
   });
 
+  // CLAW-137. 로그인으로 해결되지 않는 상태(네트워크·서버 장애)에 로그인 버튼을 띄우면
+  // 사용자가 엉뚱한 조치를 한다. 상태 → 문구·버튼 노출 매핑을 고정한다.
+  it("클로애드 계정 섹션은 로그인으로 해결되는 상태에만 버튼을 노출한다", async () => {
+    const strings = loadSettingsI18nForTest().ko;
+
+    async function renderWith(state) {
+      const harness = loadGeneralTabForTest({
+        snapshot: makeGeneralSnapshot({ lang: "ko" }),
+        settingsAPI: { getClawadAuthState: () => Promise.resolve(state) },
+      });
+      harness.renderContent();
+      // 상태 조회는 비동기다. 마이크로태스크가 소진될 때까지 기다린다.
+      await Promise.resolve();
+      await Promise.resolve();
+      const buttons = harness.content.querySelectorAll(".soft-btn");
+      const loginButton = buttons.find((button) => button.textContent === strings.clawadAccountLogin);
+      return { harness, loginButton, text: collectText(harness.content) };
+    }
+
+    const cases = [
+      { status: "ok", canLogin: true, descKey: "clawadAccountOk", button: false },
+      { status: "logged-out", canLogin: true, descKey: "clawadAccountLoggedOut", button: true },
+      { status: "consent-needed", canLogin: true, descKey: "clawadAccountConsentNeeded", button: true },
+      { status: "login-needed", canLogin: true, descKey: "clawadAccountLoginNeeded", button: true },
+      { status: "degraded", canLogin: true, descKey: "clawadAccountDegraded", button: false },
+      { status: "unknown", canLogin: false, descKey: "clawadAccountUnknown", button: false },
+      // 상태가 로그인을 요구해도 실행 경로가 없으면(CLI 미설치) 버튼을 숨긴다.
+      { status: "consent-needed", canLogin: false, descKey: "clawadAccountConsentNeeded", button: false },
+    ];
+
+    for (const item of cases) {
+      const label = `${item.status}/canLogin=${item.canLogin}`;
+      const { loginButton, text } = await renderWith({ status: item.status, canLogin: item.canLogin });
+      assert.ok(text.includes(strings.sectionClawadAccount), `${label}: 섹션 제목이 없다`);
+      assert.ok(text.includes(strings[item.descKey]), `${label}: 상태 문구가 ${item.descKey}가 아니다`);
+      assert.ok(loginButton, `${label}: 로그인 버튼 요소가 생성되지 않았다`);
+      assert.strictEqual(loginButton.hidden, !item.button, `${label}: 버튼 노출이 기대와 다르다`);
+    }
+  });
+
+  it("클로애드 로그인 버튼은 로그인 커맨드를 실행한다", async () => {
+    const strings = loadSettingsI18nForTest().ko;
+    let started = 0;
+    const harness = loadGeneralTabForTest({
+      snapshot: makeGeneralSnapshot({ lang: "ko" }),
+      settingsAPI: {
+        getClawadAuthState: () => Promise.resolve({ status: "consent-needed", canLogin: true }),
+        startClawadLogin: () => { started += 1; return Promise.resolve({ status: "started" }); },
+      },
+    });
+    harness.renderContent();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const button = harness.content.querySelectorAll(".soft-btn")
+      .find((element) => element.textContent === strings.clawadAccountLogin);
+    assert.ok(button, "로그인 버튼을 찾지 못했다");
+    assert.strictEqual(button.hidden, false);
+
+    button.dispatchEvent({ type: "click" });
+    await Promise.resolve();
+    assert.strictEqual(started, 1, "로그인 커맨드가 실행되지 않았다");
+  });
+
   it("WSL row offers Unpair on hooksFilesPresent even when the deployed badge is dark", () => {
     function buildHarness(wslEntryOverrides) {
       const detectionResult = {

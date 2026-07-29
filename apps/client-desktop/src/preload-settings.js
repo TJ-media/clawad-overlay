@@ -127,6 +127,8 @@ contextBridge.exposeInMainWorld("settingsAPI", {
   listAgents: () => ipcRenderer.invoke("settings:list-agents"),
   pickAgentDiscoveryPath: (kind) => ipcRenderer.invoke("settings:pick-agent-discovery-path", { kind }),
   detectAgentInstallations: (opts) => ipcRenderer.invoke("settings:detect-agent-installations", opts),
+  getClawadAuthState: () => ipcRenderer.invoke("settings:get-clawad-auth-state"),
+  startClawadLogin: () => ipcRenderer.invoke("settings:start-clawad-login"),
   getAboutInfo: () => ipcRenderer.invoke("settings:get-about-info"),
   checkForUpdates: () => ipcRenderer.invoke("settings:check-for-updates"),
   showTutorial: () => ipcRenderer.invoke("settings:show-tutorial"),

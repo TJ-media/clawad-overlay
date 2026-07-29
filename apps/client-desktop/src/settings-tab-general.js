@@ -85,6 +85,84 @@
     return helpers.t(key);
   }
 
+  // 상태별 표시 문구. 로그인으로 해결되는 상태에만 버튼을 노출한다 — 네트워크·서버 장애에
+  // 로그인 버튼을 띄우면 사용자가 엉뚱한 조치를 하게 된다 (overlay-contract §3.4).
+  const CLAWAD_AUTH_VIEW = {
+    ok: { descKey: "clawadAccountOk", action: false },
+    "logged-out": { descKey: "clawadAccountLoggedOut", action: true },
+    "consent-needed": { descKey: "clawadAccountConsentNeeded", action: true },
+    "login-needed": { descKey: "clawadAccountLoginNeeded", action: true },
+    degraded: { descKey: "clawadAccountDegraded", action: false },
+    unknown: { descKey: "clawadAccountUnknown", action: false },
+  };
+
+  function buildClawadAccountSection() {
+    const row = document.createElement("div");
+    row.className = "row";
+
+    const text = document.createElement("div");
+    text.className = "row-text";
+    const label = document.createElement("span");
+    label.className = "row-label";
+    label.textContent = t("clawadAccountLabel");
+    const desc = document.createElement("span");
+    desc.className = "row-desc";
+    desc.textContent = t("clawadAccountUnknown");
+    text.appendChild(label);
+    text.appendChild(desc);
+    row.appendChild(text);
+
+    const control = document.createElement("div");
+    control.className = "row-control";
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "soft-btn accent";
+    button.textContent = t("clawadAccountLogin");
+    button.hidden = true;
+    control.appendChild(button);
+    row.appendChild(control);
+
+    const section = helpers.buildSection(t("sectionClawadAccount"), [row]);
+
+    function apply(state) {
+      const view = CLAWAD_AUTH_VIEW[state && state.status] || CLAWAD_AUTH_VIEW.unknown;
+      desc.textContent = t(view.descKey);
+      // 상태가 로그인을 요구해도 실행 경로가 없으면(CLI 미설치) 버튼을 숨긴다.
+      button.hidden = !(view.action && state && state.canLogin);
+      button.disabled = false;
+    }
+
+    function refresh() {
+      if (!window.settingsAPI || typeof window.settingsAPI.getClawadAuthState !== "function") {
+        apply({ status: "unknown", canLogin: false });
+        return;
+      }
+      window.settingsAPI.getClawadAuthState()
+        .then((state) => apply(state))
+        .catch(() => apply({ status: "unknown", canLogin: false }));
+    }
+
+    helpers.attachActivation(button, () => {
+      if (!window.settingsAPI || typeof window.settingsAPI.startClawadLogin !== "function") return;
+      button.disabled = true;
+      button.textContent = t("clawadAccountLoginOpening");
+      window.settingsAPI.startClawadLogin()
+        .then((result) => {
+          if (result && result.status === "started") ops.showToast(t("clawadAccountLoginStarted"), { ttl: 6000 });
+          else ops.showToast(t("clawadAccountLoginFailed"), { error: true });
+        })
+        .catch(() => ops.showToast(t("clawadAccountLoginFailed"), { error: true }))
+        .finally(() => {
+          button.textContent = t("clawadAccountLogin");
+          // 로그인은 브라우저에서 끝나므로 완료 시점을 알 수 없다. 잠시 뒤 상태를 다시 읽는다.
+          setTimeout(refresh, 4000);
+        });
+    });
+
+    refresh();
+    return section;
+  }
+
   function render(parent) {
     const h1 = document.createElement("h1");
     h1.textContent = t("settingsTitle");
@@ -95,6 +173,10 @@
     subtitle.textContent = t("settingsSubtitle");
     parent.appendChild(subtitle);
     parent.appendChild(buildTutorialReplayHint());
+
+    // 클로애드 계정 상태는 광고·적립이 멈췄을 때 가장 먼저 확인하는 곳이라 맨 위에 둔다
+    // (CLAW-137). 인증 로직은 clawad가 전담하고 여기서는 상태 표시와 로그인 실행만 한다.
+    parent.appendChild(buildClawadAccountSection());
 
     // General tab IA: sections are ordered by how often they're touched, with
     // the danger section pinned last. Appearance stays first (language sits at

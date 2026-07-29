@@ -547,6 +547,24 @@ function registerSettingsIpc(options = {}) {
     }
   });
 
+  // CLAW-137: 클로애드 로그인 상태. 인증 로직은 clawad가 전담하고 여기서는 상태를 읽어
+  // 표시하고 로그인 커맨드를 실행하기만 한다 (overlay-contract §3.4).
+  handle("settings:get-clawad-auth-state", () => {
+    try {
+      return require("./clawad-auth-state").readAuthState();
+    } catch (err) {
+      return { status: "unknown", canLogin: false, lastSuccessAt: null, code: null, message: (err && err.message) || "" };
+    }
+  });
+
+  handle("settings:start-clawad-login", () => {
+    try {
+      return require("./clawad-auth-state").startLogin();
+    } catch (err) {
+      return { status: "failed", message: (err && err.message) || String(err) };
+    }
+  });
+
   handle("settings:get-about-info", () => {
     let heroSvgContent = "";
     try {
