@@ -285,6 +285,48 @@ describe("package build config", () => {
         assert.doesNotMatch(workflow, /sidecar/i, `${name}에 사이드카 단계가 남아 있다`);
       }
     });
+  });
+
+  // electron-builder는 서명 자격이 없으면 조용히 건너뛰고 빌드를 성공으로 끝낸다.
+  // 그래서 (1) 태그 릴리스는 산출물 검사를 강제하고 (2) 서명 경로는 forceCodeSigning으로
+  // 실패를 드러낸다. 이 두 가드가 사라지면 미서명 산출물이 조용히 게시된다 (CLAW-95).
+  describe("코드서명 파이프라인 가드", () => {
+    const workflow = fs.readFileSync(path.join(ROOT, ".github", "workflows", "build.yml"), "utf8");
+
+    it("서명 검증 스크립트가 package.json에 있다", () => {
+      assert.strictEqual(pkg.scripts["verify:signature"], "node scripts/verify-signature.js");
+      assert.strictEqual(pkg.scripts["verify:signature:require"], "node scripts/verify-signature.js --require");
+      assert.ok(fs.existsSync(path.join(ROOT, "scripts", "verify-signature.js")), "검증 스크립트 파일이 없다");
+    });
+
+    it("태그 릴리스는 미서명 산출물을 통과시키지 않는다", () => {
+      const gated = workflow.split("\n").some((line, index, lines) => {
+        if (!line.includes("verify:signature:require")) return false;
+        // 바로 위 줄의 조건이 태그 릴리스여야 한다.
+        return (lines[index - 1] || "").includes("refs/tags/v");
+      });
+      assert.ok(gated, "verify:signature:require가 태그 릴리스 조건 아래에 있어야 한다");
+    });
+
+    it("서명 빌드는 실패를 숨기지 않는다", () => {
+      assert.match(
+        pkg.scripts["build:win:x64:signed"] || "",
+        /--config\.forceCodeSigning=true/,
+        "서명 빌드에 forceCodeSigning이 없으면 서명 실패가 조용히 넘어간다"
+      );
+      assert.match(workflow, /--config\.forceCodeSigning=true/, "CI 서명 경로에 forceCodeSigning이 없다");
+    });
+
+    it("서명 자격을 레포에 담지 않는다", () => {
+      // 값은 GitHub 시크릿·환경변수로만 들어온다 (규칙 [SECURITY]).
+      const signed = pkg.scripts["build:win:x64:signed"] || "";
+      for (const name of ["AZURE_SIGN_ENDPOINT", "AZURE_SIGN_ACCOUNT", "AZURE_SIGN_PROFILE", "AZURE_SIGN_PUBLISHER"]) {
+        assert.match(signed, new RegExp(`\\$\\{env\\.${name}\\}`), `${name}을 환경변수로 받지 않는다`);
+      }
+      assert.doesNotMatch(signed, /-----BEGIN|\.pfx|\.p12/, "인증서 파일 경로나 키가 스크립트에 박혀 있다");
+      assert.strictEqual(pkg.build.win.certificateFile, undefined, "인증서 파일을 빌드 설정에 박지 않는다");
+      assert.strictEqual(pkg.build.win.certificatePassword, undefined, "인증서 비밀번호를 빌드 설정에 박지 않는다");
+    });
 
     it("publishes GitHub releases only for version tags", () => {
       const workflow = fs.readFileSync(path.join(ROOT, ".github", "workflows", "build.yml"), "utf8");

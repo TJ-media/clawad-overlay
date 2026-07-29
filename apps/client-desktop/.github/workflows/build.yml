@@ -16,7 +16,35 @@ jobs:
           node-version-file: .nvmrc
       - run: npm install
       - run: npm test
-      - run: npx electron-builder --win --publish never
+      # 서명 시크릿이 채워지면 자동으로 서명 빌드로 넘어간다 (CLAW-95).
+      # 폐쇄 알파를 막지 않으려고 없을 때는 기존 무서명 빌드를 그대로 한다.
+      - id: signing
+        shell: bash
+        run: |
+          if [ -n "${{ secrets.AZURE_SIGN_ENDPOINT }}" ] && [ -n "${{ secrets.AZURE_CLIENT_ID }}" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::코드서명 시크릿이 없어 무서명으로 빌드합니다 (CLAW-95). 공개 배포 전에 조달이 필요합니다."
+          fi
+      - if: steps.signing.outputs.available == 'true'
+        run: npx electron-builder --win --publish never --config.forceCodeSigning=true
+        env:
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_SIGN_ENDPOINT: ${{ secrets.AZURE_SIGN_ENDPOINT }}
+          AZURE_SIGN_ACCOUNT: ${{ secrets.AZURE_SIGN_ACCOUNT }}
+          AZURE_SIGN_PROFILE: ${{ secrets.AZURE_SIGN_PROFILE }}
+          AZURE_SIGN_PUBLISHER: ${{ secrets.AZURE_SIGN_PUBLISHER }}
+      - if: steps.signing.outputs.available != 'true'
+        run: npx electron-builder --win --publish never
+      # 빌드 로그는 서명 여부를 알려주지 않는다 — 산출물을 직접 검사한다.
+      # 태그 릴리스는 미서명을 통과시키지 않는다.
+      - if: startsWith(github.ref, 'refs/tags/v')
+        run: npm run verify:signature:require
+      - if: "!startsWith(github.ref, 'refs/tags/v')"
+        run: npm run verify:signature
       - uses: actions/upload-artifact@v4
         with:
           name: windows-installer
@@ -33,7 +61,19 @@ jobs:
           node-version-file: .nvmrc
       - run: npm install
       - run: npm test
+      # macOS는 서명만으로 부족하고 공증까지 통과해야 경고가 사라진다 (CLAW-95).
+      # 시크릿이 없으면 electron-builder가 서명·공증을 건너뛴다.
       - run: npx electron-builder --mac --publish never
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      - if: startsWith(github.ref, 'refs/tags/v')
+        run: npm run verify:signature:require
+      - if: "!startsWith(github.ref, 'refs/tags/v')"
+        run: npm run verify:signature
       - uses: actions/upload-artifact@v4
         with:
           name: mac-installer
