@@ -560,13 +560,20 @@ function registerSettingsIpc(options = {}) {
       pendingUpdateVersion = String(settingsController.get("pendingUpdateVersion") || "");
       autoUpdateCheck = settingsController.get("autoUpdateCheck") !== false;
     } catch {}
+    // \uc0c1\ub2e8\uc740 \uc774 \uc81c\ud488(\ud074\ub85c\uc560\ub4dc \uc624\ubc84\ub808\uc774) \uae30\uc900\uc774\ub2e4. \ubc84\uc804\u00b7\uc5c5\ub370\uc774\ud2b8 \ud655\uc778\ub3c4 \uc6b0\ub9ac \uc800\uc7a5\uc18c\ub97c
+    // \ubcf8\ub2e4(updater.js UPDATE_REPO_SLUG). \ud3ec\ud06c \uc6d0\ubcf8\uc758 \uc800\uc791\uad8c\u00b7\uc800\uc791\uc790\ub294 \uc9c0\uc6b0\uc9c0 \uc54a\uace0
+    // \ucd5c\ud558\ub2e8 "\uc6d0\ubcf8 \ud504\ub85c\uc81d\ud2b8" \uc808\ub85c \uc62e\uaca8 \ud45c\uae30\ud55c\ub2e4 \u2014 AGPL \uadc0\uc18d \uc758\ubb34\uc774\uc790 \uc0ac\uc2e4 \uc815\ud569\uc131\uc774\ub2e4.
     return {
       version: app.getVersion(),
-      repoUrl: "https://github.com/rullerzhou-afk/clawd-on-desk",
-      license: "AGPL-3.0",
-      copyright: "\u00a9 2026 Ruller_Lulu",
-      authorName: "Ruller_Lulu / \u9e7f\u9e7f",
-      authorUrl: "https://github.com/rullerzhou-afk",
+      repoUrl: "https://github.com/TJ-media/clawad-overlay",
+      license: "AGPL-3.0-only",
+      copyright: "\u00a9 2026 ClawAd",
+      authorName: "TaeJeong KIM",
+      authorUrl: "https://github.com/TJ-media",
+      upstreamRepoUrl: "https://github.com/rullerzhou-afk/clawd-on-desk",
+      upstreamAuthorName: "Ruller_Lulu / \u9e7f\u9e7f",
+      upstreamAuthorUrl: "https://github.com/rullerzhou-afk",
+      upstreamCopyright: "\u00a9 2026 Ruller_Lulu",
       heroSvgContent,
       pendingUpdateVersion,
       autoUpdateCheck,

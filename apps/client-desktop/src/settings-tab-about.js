@@ -20,7 +20,10 @@
   // cache; the dynamic ones must be re-fetched on every render so the
   // pending hint and the auto-update toggle reflect current state after
   // the user flips the toggle or the scheduler discovers a new version.
-  const STATIC_ABOUT_KEYS = ["repoUrl", "license", "copyright", "authorName", "authorUrl", "heroSvgContent"];
+  const STATIC_ABOUT_KEYS = [
+    "repoUrl", "license", "copyright", "authorName", "authorUrl", "heroSvgContent",
+    "upstreamRepoUrl", "upstreamAuthorName", "upstreamAuthorUrl", "upstreamCopyright",
+  ];
   function fetchAboutInfo() {
     if (!window.settingsAPI || typeof window.settingsAPI.getAboutInfo !== "function") {
       return Promise.resolve(runtime.about.infoCache || null);
@@ -152,11 +155,11 @@
 
     const crabWrap = document.createElement("div");
     crabWrap.className = "about-crab-wrap";
-    crabWrap.title = "Clawd";
+    crabWrap.title = "Claw-Ad";
 
     const title = document.createElement("h2");
     title.className = "about-title";
-    title.textContent = "Clawd on Desk";
+    title.textContent = "Claw-Ad";
 
     const tagline = document.createElement("p");
     tagline.className = "about-tagline";
@@ -170,6 +173,24 @@
     const infoSection = document.createElement("section");
     infoSection.className = "section";
     parent.appendChild(infoSection);
+
+    // 원본 프로젝트 절. 이 제품은 clawd-on-desk 포크이므로 상류 저장원·저작자·기여자를
+    // 여기에 모아 둔다 (AGPL 귀속). 상단 정보는 우리 것, 하단은 출처 — 섞지 않는다.
+    const upstreamSection = document.createElement("section");
+    upstreamSection.className = "section";
+    const upstreamTitle = document.createElement("div");
+    upstreamTitle.className = "about-info-label";
+    upstreamTitle.textContent = t("aboutUpstreamSectionTitle");
+    upstreamTitle.style.fontWeight = "600";
+    upstreamTitle.style.marginBottom = "4px";
+    const upstreamNote = document.createElement("div");
+    upstreamNote.className = "about-info-description";
+    upstreamNote.textContent = t("aboutUpstreamNote");
+    upstreamNote.style.opacity = "0.7";
+    upstreamNote.style.fontSize = "12px";
+    upstreamNote.style.marginBottom = "10px";
+    upstreamSection.appendChild(upstreamTitle);
+    upstreamSection.appendChild(upstreamNote);
 
     const maintainersRow = document.createElement("div");
     maintainersRow.className = "about-info-row";
@@ -216,6 +237,8 @@
       });
       contribList.appendChild(link);
     }
+
+    parent.appendChild(upstreamSection);
 
     const footer = document.createElement("div");
     footer.className = "about-footer";
@@ -332,9 +355,38 @@
         ));
       }
 
-      infoSection.appendChild(maintainersRow);
-      infoSection.appendChild(contribRow);
-      infoSection.appendChild(contribList);
+      // 하단 원본 프로젝트 절: 상류 저장소·저작자·저작권 + 상류 유지보수자·기여자.
+      while (upstreamSection.childNodes.length > 2) upstreamSection.removeChild(upstreamSection.lastChild);
+      if (safe.upstreamRepoUrl) {
+        upstreamSection.appendChild(buildAboutLinkRow(
+          t("aboutRepositoryLabel"),
+          safe.upstreamRepoUrl,
+          safe.upstreamRepoUrl.replace(/^https?:\/\//, "")
+        ));
+      }
+      if (safe.upstreamAuthorName) {
+        upstreamSection.appendChild(buildAboutLinkRow(
+          t("aboutAuthorLabel"),
+          safe.upstreamAuthorUrl,
+          safe.upstreamAuthorName
+        ));
+      }
+      if (safe.upstreamCopyright) {
+        const cRow = document.createElement("div");
+        cRow.className = "about-info-row";
+        const cl = document.createElement("div");
+        cl.className = "about-info-label";
+        cl.textContent = t("aboutLicenseLabel");
+        const cv = document.createElement("div");
+        cv.className = "about-info-value";
+        cv.textContent = "AGPL-3.0-only · " + safe.upstreamCopyright;
+        cRow.appendChild(cl);
+        cRow.appendChild(cv);
+        upstreamSection.appendChild(cRow);
+      }
+      upstreamSection.appendChild(maintainersRow);
+      upstreamSection.appendChild(contribRow);
+      upstreamSection.appendChild(contribList);
     });
   }
 

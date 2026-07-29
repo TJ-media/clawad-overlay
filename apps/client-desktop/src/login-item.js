@@ -48,7 +48,7 @@ function linuxSetOpenAtLogin(enable, { execCmd } = {}) {
       [
         "[Desktop Entry]",
         "Type=Application",
-        "Name=Clawd on Desk",
+        "Name=Claw-Ad",
         `Exec=${execCmd}`,
         "Hidden=false",
         "NoDisplay=false",
