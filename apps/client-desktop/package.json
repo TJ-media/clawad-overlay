@@ -73,7 +73,7 @@
     ],
     "mac": {
       "icon": "assets/icon.png",
-      "artifactName": "Clawd-on-Desk-${version}-${arch}.${ext}",
+      "artifactName": "Claw-Ad-${version}-${arch}.${ext}",
       "target": [
         {
           "target": "dmg",
@@ -90,7 +90,7 @@
     },
     "win": {
       "icon": "assets/icon.ico",
-      "artifactName": "Clawd-on-Desk-Setup-${version}-${arch}.${ext}",
+      "artifactName": "Claw-Ad-Setup-${version}-${arch}.${ext}",
       "target": [
         {
           "target": "nsis",
@@ -105,7 +105,7 @@
       "maintainer": "TaeJeong KIM <oganesson12@naver.com>",
       "icon": "assets/icons",
       "category": "Utility",
-      "artifactName": "Clawd-on-Desk-${version}-${arch}.${ext}",
+      "artifactName": "Claw-Ad-${version}-${arch}.${ext}",
       "target": [
         {
           "target": "AppImage",

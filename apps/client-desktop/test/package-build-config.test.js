@@ -131,6 +131,28 @@ describe("package build config", () => {
     });
   });
 
+  // 사용자가 내려받는 파일명은 제품명과 같아야 한다. artifactName이 템플릿이 아니라
+  // 하드코딩 문자열이라 CLAW-126 브랜딩 교체에서 빠져 있었다 (CLAW-131).
+  describe("배포 산출물 이름 브랜딩", () => {
+    it("productName과 appId가 클로애드 것이다", () => {
+      assert.strictEqual(pkg.build.productName, "Claw-Ad");
+      assert.strictEqual(pkg.build.appId, "ai.clawad.overlay");
+    });
+
+    it("모든 플랫폼 artifactName에 포크 원본 제품명이 남아 있지 않다", () => {
+      for (const platform of ["win", "mac", "linux"]) {
+        const name = pkg.build[platform] && pkg.build[platform].artifactName;
+        assert.strictEqual(typeof name, "string", `build.${platform}.artifactName이 없다`);
+        assert.doesNotMatch(
+          name,
+          /clawd/i,
+          `build.${platform}.artifactName에 원본 제품명이 남아 있다: ${name}`
+        );
+        assert.match(name, /^Claw-Ad/, `build.${platform}.artifactName은 Claw-Ad로 시작해야 한다: ${name}`);
+      }
+    });
+  });
+
   describe("macOS architecture targets", () => {
     function getMacDmgTarget() {
       const targets = pkg.build.mac && pkg.build.mac.target;

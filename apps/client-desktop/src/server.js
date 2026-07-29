@@ -281,7 +281,7 @@ function registerClaudeHooksTask(meta) {
       return {
         status: "error",
         reason: "source-script-missing",
-        message: "Claude hook source script is missing; reinstall or re-extract Clawd",
+        message: "Claude hook source script is missing; reinstall or re-extract Claw-Ad",
       };
     }
 
@@ -394,7 +394,7 @@ function setClaudeQuotaCollectionEnabled(callOptions = {}) {
       return {
         status: "error",
         reason: "statusline-occupied",
-        message: "Claude Code already has a custom statusline; Clawd left it unchanged",
+        message: "Claude Code already has a custom statusline; Claw-Ad left it unchanged",
       };
     }
     if (result.installed !== true) {
@@ -426,7 +426,7 @@ function setClaudeAutoStart(callOptions = {}) {
       return {
         status: "error",
         reason: "source-script-missing",
-        message: "Claude hook source script is missing; reinstall or re-extract Clawd",
+        message: "Claude hook source script is missing; reinstall or re-extract Claw-Ad",
       };
     }
 
@@ -563,7 +563,7 @@ function repairRuntimeStatus() {
   }
   return {
     status: "error",
-    message: "Local server is not listening; restart Clawd",
+    message: "Local server is not listening; restart Claw-Ad",
   };
 }
 

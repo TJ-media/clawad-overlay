@@ -702,13 +702,19 @@ test("settings IPC serves agent/about/update/external and remove-theme dialog he
         },
       },
     ]);
+    // \uc0c1\ub2e8 \uc815\ubcf4\ub294 \uc774 \uc81c\ud488 \uae30\uc900, upstream* \ud544\ub4dc\ub294 \uc815\ubcf4 \ud0ed \ucd5c\ud558\ub2e8 "\uc6d0\ubcf8 \ud504\ub85c\uc81d\ud2b8" \uc808\uc6a9\uc774\ub2e4
+    // (AGPL \uadc0\uc18d). \ub450 \ubb36\uc74c\uc774 \uc11e\uc774\uba74 \uc6b0\ub9ac\uac00 \uc0c1\ub958 \uc800\uc791\uc790\uc778 \uac83\ucc98\ub7fc \ubcf4\uc778\ub2e4 \u2014 CLAW-131.
     assert.deepStrictEqual(await ipcMain.invoke("settings:get-about-info"), {
       version: "1.2.3",
-      repoUrl: "https://github.com/rullerzhou-afk/clawd-on-desk",
-      license: "AGPL-3.0",
-      copyright: "\u00a9 2026 Ruller_Lulu",
-      authorName: "Ruller_Lulu / \u9e7f\u9e7f",
-      authorUrl: "https://github.com/rullerzhou-afk",
+      repoUrl: "https://github.com/TJ-media/clawad-overlay",
+      license: "AGPL-3.0-only",
+      copyright: "\u00a9 2026 ClawAd",
+      authorName: "TaeJeong KIM",
+      authorUrl: "https://github.com/TJ-media",
+      upstreamRepoUrl: "https://github.com/rullerzhou-afk/clawd-on-desk",
+      upstreamAuthorName: "Ruller_Lulu / \u9e7f\u9e7f",
+      upstreamAuthorUrl: "https://github.com/rullerzhou-afk",
+      upstreamCopyright: "\u00a9 2026 Ruller_Lulu",
       heroSvgContent: "<svg id=\"hero\"></svg>",
       pendingUpdateVersion: "",
       autoUpdateCheck: true,

@@ -14,10 +14,12 @@
     FileClose $0
   clawd_node_cleanup_home_done:
 
-  IfFileExists "$INSTDIR\Clawd on Desk.exe" 0 clawd_node_cleanup_done
+  ; 실행 파일 이름은 productName에서 나온다. 옛 이름을 박아두면 제품명을 바꾼 뒤
+  ; 제거할 때 이 정리 단계가 조용히 건너뛰어진다 (CLAW-126에서 실제로 그랬다).
+  IfFileExists "$INSTDIR\${APP_EXECUTABLE_FILENAME}" 0 clawd_node_cleanup_done
   IfFileExists "$INSTDIR\resources\app.asar.unpacked\hooks\cleanup-integrations.js" 0 clawd_node_cleanup_done
     System::Call 'Kernel32::SetEnvironmentVariable(t, t)i("ELECTRON_RUN_AS_NODE", "1").r0'
-    nsExec::ExecToLog '"$INSTDIR\Clawd on Desk.exe" "$INSTDIR\resources\app.asar.unpacked\hooks\cleanup-integrations.js" --apply --user-home "$1" --source nsis --fail-open'
+    nsExec::ExecToLog '"$INSTDIR\${APP_EXECUTABLE_FILENAME}" "$INSTDIR\resources\app.asar.unpacked\hooks\cleanup-integrations.js" --apply --user-home "$1" --source nsis --fail-open'
     Pop $0
     System::Call 'Kernel32::SetEnvironmentVariable(t, t)i("ELECTRON_RUN_AS_NODE", "").r0'
   clawd_node_cleanup_done:
