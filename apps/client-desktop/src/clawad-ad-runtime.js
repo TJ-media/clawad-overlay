@@ -26,6 +26,12 @@ const TRIGGER_VERSION = 1;
 const TRIGGER_SCRIPT_BASENAME = "overlay-events.js";
 const WORK_STATE_DIR_NAME = "work-state";
 const SESSION_FILE_PATTERN = /^[0-9a-f]{32}\.json$/;
+/**
+ * 인정으로 이어지지 않은 표시를 같은 토큰으로 몇 번까지 다시 시도할지 (CLAW-142).
+ * 리워드 정책값이 아니라 재고 교착을 막는 런타임 상한이라 정책 캐시로 받지 않는다.
+ * 짧은 작업이 반복돼도 재고가 살아남을 만큼은 크고, 안 되는 토큰에 매달리지 않을 만큼은 작아야 한다.
+ */
+const MAX_UNCOUNTED_SHOWS = 3;
 /** 광고 문구 표시 상한. 길이 제한은 표시 안전장치이고 정책값이 아니다. */
 const MAX_AD_TEXT_LENGTH = 120;
 const MAX_AD_BRAND_LENGTH = 60;
@@ -66,12 +72,19 @@ function readPolicyCache(dataDir) {
   // 그래서 다른 값들과 달리 열어두는 것이 안전하다. 반대로 값이 들어 있는데 형식이 틀리면
   // 손상된 캐시이므로 그때는 광고를 켜지 않는다.
   if (overlay.adGapMs !== undefined && !positiveInt(overlay.adGapMs)) return null;
+  // 활동 상태의 유효기간 (CLAW-142). adGapMs와 같은 이유로 **선택 항목이다** — 이 값을 담기
+  // 시작한 CLI가 아직 안 깔린 조합에서 광고를 꺼버리면 안 된다. 없으면 0으로 두고,
+  // isWorkActive가 기존처럼 active 플래그를 그대로 믿는다.
+  const activity = cache.activity;
+  const staleActiveMs = activity && activity.staleActiveMs !== undefined ? activity.staleActiveMs : 0;
+  if (staleActiveMs !== 0 && !positiveInt(staleActiveMs)) return null;
   return {
     adRotateMs: overlay.adRotateMs,
     adGapMs: overlay.adGapMs === undefined ? 0 : overlay.adGapMs,
     idleThresholdMs: overlay.idleThresholdMs,
     maxWidthPx: overlay.maxWidthPx,
     minViewMs: impression.minViewMs,
+    staleActiveMs,
   };
 }
 
@@ -90,7 +103,7 @@ function readBundles(dataDir, now) {
  * 수거(clawad)가 활성 구간 교집합으로 인정 여부를 판정하므로, 표시도 같은 신호에 맞춘다 —
  * 어긋나면 "보이지만 인정되지 않는" 노출만 쌓인다.
  */
-function isWorkActive(dataDir, now, idleThresholdMs) {
+function isWorkActive(dataDir, now, idleThresholdMs, staleActiveMs) {
   const dir = path.join(dataDir, WORK_STATE_DIR_NAME);
   let names = [];
   try { names = fs.readdirSync(dir); } catch { return false; }
@@ -98,7 +111,14 @@ function isWorkActive(dataDir, now, idleThresholdMs) {
     if (!SESSION_FILE_PATTERN.test(name)) continue;
     const activity = readJsonFile(path.join(dir, name));
     if (!activity || activity.version !== 1) continue;
-    if (activity.active === true && Number.isFinite(activity.startedAt)) return true;
+    if (activity.active === true && Number.isFinite(activity.startedAt)) {
+      // 훅이 Stop을 못 보내면 세션이 active=true로 굳는다(터미널 강제 종료 등). 그걸 그대로
+      // 믿으면 며칠 전 좀비 세션 하나 때문에 "영원히 작업 중"이 된다 (CLAW-142). 수거측
+      // loadActivity와 **같은 규칙**으로 닫는다 — 넘긴 구간은 startedAt + staleActiveMs에
+      // 끝난 것으로 보고 아래 idleThresholdMs 판정에 태운다.
+      if (staleActiveMs <= 0 || now - activity.startedAt <= staleActiveMs) return true;
+      if (now - (activity.startedAt + staleActiveMs) <= idleThresholdMs) return true;
+    }
     const intervals = Array.isArray(activity.intervals) ? activity.intervals : [];
     for (const interval of intervals) {
       if (interval && Number.isFinite(interval.endedAt) && now - interval.endedAt <= idleThresholdMs) return true;
@@ -188,8 +208,15 @@ function readTriggerPointer(dataDir) {
 function createAdRuntime(options = {}) {
   const dataDir = options.dataDir || clawadDataDir();
   const spawnCollector = options.spawnCollector || defaultSpawnCollector;
-  /** 이 프로세스가 이미 표시해 스풀에 남긴 토큰. serveToken은 단일 사용이다. */
-  const usedTokens = new Set();
+  /** 스풀에 남긴 토큰. serveToken은 단일 사용이므로 다시 쓰지 않는다. */
+  const spooledTokens = new Set();
+  /**
+   * 표시했지만 인정 요청까지 가지 못한 토큰의 횟수 (CLAW-142).
+   * 이런 토큰은 clawad가 캐시에서 지우지 않고 서버도 "미사용"으로 세므로, 여기서 영구 소모로
+   * 처리해 버리면 재고가 말라붙어 광고가 멈춘다. 재사용은 허용하되 같은 소재만 반복하지 않도록
+   * 우선순위를 낮추고 상한을 둔다.
+   */
+  const uncountedShows = new Map();
   /** 현재 표시 중인 구간. { serveToken, renderStarted, displayStartedAt } */
   let current = null;
   let currentBundle = null;
@@ -208,9 +235,20 @@ function createAdRuntime(options = {}) {
     currentBundle = null;
     // 최소 시청 시간에 못 미친 구간은 이벤트를 만들지 않는다 (CLAW-90 요구사항).
     // 최종 인정 판정은 clawad 수거와 서버가 한다.
-    if (!policy || finished.displayEndedAt - finished.displayStartedAt < policy.minViewMs) return null;
+    const countUncounted = () => {
+      uncountedShows.set(finished.serveToken, (uncountedShows.get(finished.serveToken) || 0) + 1);
+    };
+    if (!policy || finished.displayEndedAt - finished.displayStartedAt < policy.minViewMs) {
+      countUncounted();
+      return null;
+    }
     const file = writeSpoolEvent(dataDir, finished);
-    if (!file) return null;
+    if (!file) {
+      countUncounted();
+      return null;
+    }
+    spooledTokens.add(finished.serveToken);
+    uncountedShows.delete(finished.serveToken);
     lastSpooledEndAt = finished.displayEndedAt;
     triggerCollector();
     return file;
@@ -243,9 +281,22 @@ function createAdRuntime(options = {}) {
     }
   }
 
-  function chooseBundle(bundles) {
-    const candidates = bundles.filter((bundle) => !usedTokens.has(bundle.serveToken));
-    return candidates.length ? candidates[0] : null;
+  /**
+   * 표시할 번들을 고른다 (CLAW-142).
+   * 아직 안 보여준 것 → 인정 안 된 채 보여준 것 순으로 고르고, 직전 소재는 피한다.
+   * 상한(MAX_UNCOUNTED_SHOWS)을 넘긴 토큰은 더 시도하지 않는다 — 계속 미달로 끝나는 토큰에
+   * 재고를 묶어두지 않기 위해서다. 스풀에 남긴 토큰은 단일 사용이라 영구 제외한다.
+   */
+  function chooseBundle(bundles, previousToken) {
+    const usable = bundles.filter((bundle) => !spooledTokens.has(bundle.serveToken)
+      && (uncountedShows.get(bundle.serveToken) || 0) < MAX_UNCOUNTED_SHOWS);
+    const fresh = usable.filter((bundle) => !uncountedShows.has(bundle.serveToken)
+      && bundle.serveToken !== previousToken);
+    if (fresh.length) return fresh[0];
+    const notPrevious = usable.filter((bundle) => bundle.serveToken !== previousToken);
+    if (notPrevious.length) return notPrevious[0];
+    // 후보가 직전 소재 하나뿐이면 화면을 비우기보다 그대로 이어 보여준다.
+    return usable.length ? usable[0] : null;
   }
 
   /**
@@ -258,7 +309,7 @@ function createAdRuntime(options = {}) {
       finishCurrent(now, null);
       return null;
     }
-    if (!isWorkActive(dataDir, now, policy.idleThresholdMs)) {
+    if (!isWorkActive(dataDir, now, policy.idleThresholdMs, policy.staleActiveMs)) {
       finishCurrent(now, policy);
       return null;
     }
@@ -268,11 +319,12 @@ function createAdRuntime(options = {}) {
     if (current && currentBundle && now - current.renderStarted < policy.adRotateMs) {
       return displayPayload(currentBundle, policy.maxWidthPx);
     }
+    // finishCurrent가 current를 비우므로 직전 소재를 미리 잡아둔다 — 연속 반복 방지용이다.
+    const previousToken = current ? current.serveToken : null;
     finishCurrent(now, policy);
     const bundles = readBundles(dataDir, now);
-    const bundle = chooseBundle(bundles);
+    const bundle = chooseBundle(bundles, previousToken);
     if (!bundle) return null;
-    usedTokens.add(bundle.serveToken);
     currentBundle = bundle;
     current = { serveToken: bundle.serveToken, renderStarted: now, displayStartedAt: countedStartAt(now, policy) };
     return displayPayload(bundle, policy.maxWidthPx);
