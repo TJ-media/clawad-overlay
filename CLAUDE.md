@@ -83,12 +83,39 @@ npm test
 npm run build:mac
 ```
 
-- `main`에서 `feat/{이슈키 소문자}-{영문-슬러그}`로 분기 → `main` 대상 PR. (`develop`은 쓰지 않는다.)
+### 브랜치 전략 (2026-07-30 정리)
+
+**기능 브랜치 → `develop` → (운영 배포 시) `main`.** 비공개 `clawad` 저장소와 같은 흐름을 쓴다.
+
+- `main` — 운영 배포 기준. 릴리스를 자르는 브랜치다. `develop`에서만 머지한다
+- `develop` — 통합 브랜치. 기능 브랜치의 PR 대상이다
+- `{feat|fix|chore|docs}/{이슈키 소문자}-{영문-슬러그}` — `develop`에서 분기, `develop`으로 머지
+- **두 브랜치 모두 직접 푸시 금지.** PR로만 올린다
+- 릴리스는 `develop` → `main` PR을 머지한 뒤 **main에서** 태그를 만든다. 태그를 develop에 달면 배포된 것과 태그가 어긋난다
+- `clawad`와 걸친 변경은 **같은 브랜치명**으로 각각 PR을 만들고 본문에서 서로 링크한다
+
+### 검증 기준
+
+- `npm test`는 `apps/client-desktop`에서 돌린다. 약 22초. **lint 스크립트는 없다**
+- **기존 실패 33건이 기준선이다** (`remote-ssh-*`·`state`·`theme` 계열). 0건을 기대하면 정상 상태를 실패로 오판한다. **이 수가 늘지 않았는지**로 판정한다
+- Electron 앱을 띄우는 검증은 하지 않는다. 표시 로직은 `createAdRuntime({ dataDir })`을 별도 프로세스로 호출하고, 판정 함수는 실제 `work-state`를 임시 디렉터리로 복사해 비교한다
+
+### 이 저장소의 함정
+
+- `apps/client-desktop/.gitignore`는 **허용목록 방식**이다. `docs/**`·`scripts/*`가 통째로 무시되고 `!경로` 예외만 추적된다. 새 파일을 추가하면 예외를 함께 넣어야 커밋된다 — `git status`로 추적 여부를 반드시 확인한다
+- electron-builder는 **서명 자격이 없으면 조용히 건너뛰고 빌드를 성공으로 끝낸다.** 빌드 로그를 믿지 말고 `npm run verify:signature`로 산출물을 검사한다
+- 설치 경로는 productName 기준이다: `%LOCALAPPDATA%\Programs\Claw-Ad\Claw-Ad.exe`
+- 새 정책 키를 정책 캐시에서 읽을 때는 **선택 항목으로 둔다.** 이 앱은 자동 업데이트되고 CLI는 수동 업데이트(`clawad update`)라 "새 오버레이 + 구 CLI" 조합이 실제로 생긴다. 키가 없다고 광고를 꺼버리면 적립이 영구히 0이 된다. 없으면 기존 동작 유지, 있는데 형식이 틀리면 거절 (전례: CLAW-135 `adGapMs`, CLAW-142 `staleActiveMs`)
+
+### 그 밖
+
 - 커밋 메시지: `{feat|fix|chore}: {한 줄 요약} ({CLAW-이슈키})`
 - **커밋 메시지와 PR에 AI 활용 문구나 `Co-Authored-By`를 넣지 않는다.**
+- git author는 `TJmedia <oganesson12@hufs.ac.kr>`만 쓴다.
 - 최소 변경만 한다. 기존 코드 스타일을 따른다.
 - 커밋·푸시·PR 생성은 사용자가 요청하거나 승인한 범위에서만 한다.
 - PR은 교차 리뷰한다 (지식 공유 + 라이선스 경계 감시).
+- 릴리스 절차 전문: `apps/client-desktop/docs/project/release-process.md`
 
 ## 7. 금지 사항 요약
 

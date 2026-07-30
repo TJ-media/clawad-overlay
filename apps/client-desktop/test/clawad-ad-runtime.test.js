@@ -17,7 +17,7 @@ const {
   safeText,
 } = require("../src/clawad-ad-runtime");
 
-const POLICY = { adRotateMs: 15000, adGapMs: 3000, idleThresholdMs: 60000, maxWidthPx: 360, minViewMs: 5000 };
+const POLICY = { adRotateMs: 15000, adGapMs: 3000, idleThresholdMs: 60000, maxWidthPx: 360, minViewMs: 5000, staleActiveMs: 3600000 };
 
 function makeData(overrides = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "clawad-ad-"));
@@ -26,6 +26,7 @@ function makeData(overrides = {}) {
       version: 1,
       overlay: { adRotateMs: POLICY.adRotateMs, adGapMs: POLICY.adGapMs, idleThresholdMs: POLICY.idleThresholdMs, maxWidthPx: POLICY.maxWidthPx },
       impression: { minViewMs: POLICY.minViewMs },
+      activity: { staleActiveMs: POLICY.staleActiveMs },
       updatedAt: Date.now(),
     }));
   }
@@ -302,19 +303,131 @@ test("트리거 포인터가 없어도 스풀은 남는다 — 지연일 뿐 유
 });
 
 test("작업 활성 판정은 진행 중 세션과 유휴 임계 안의 종료 구간을 인정한다", () => {
+  const S = POLICY.staleActiveMs;
   const running = makeData();
-  assert.strictEqual(isWorkActive(running, Date.now(), POLICY.idleThresholdMs), true);
+  assert.strictEqual(isWorkActive(running, Date.now(), POLICY.idleThresholdMs, S), true);
 
   const recent = makeData({ active: false });
   writeActive(recent, { active: false, endedAgoMs: 1000 });
-  assert.strictEqual(isWorkActive(recent, Date.now(), POLICY.idleThresholdMs), true);
+  assert.strictEqual(isWorkActive(recent, Date.now(), POLICY.idleThresholdMs, S), true);
 
   const idle = makeData({ active: false });
   writeActive(idle, { active: false, endedAgoMs: POLICY.idleThresholdMs + 1 });
-  assert.strictEqual(isWorkActive(idle, Date.now(), POLICY.idleThresholdMs), false);
+  assert.strictEqual(isWorkActive(idle, Date.now(), POLICY.idleThresholdMs, S), false);
 
   const missing = makeData({ active: false });
-  assert.strictEqual(isWorkActive(missing, Date.now(), POLICY.idleThresholdMs), false, "work-state가 없으면 비활성");
+  assert.strictEqual(isWorkActive(missing, Date.now(), POLICY.idleThresholdMs, S), false, "work-state가 없으면 비활성");
+});
+
+/** 훅이 Stop을 못 보내 active=true로 굳은 세션. 터미널 강제 종료 등으로 실제로 생긴다. */
+function writeZombie(dataDir, startedAgoMs) {
+  const dir = path.join(dataDir, "work-state");
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, "b".repeat(32) + ".json"), JSON.stringify({
+    version: 1, active: true, startedAt: Date.now() - startedAgoMs, intervals: [], updatedAt: Date.now() - startedAgoMs,
+  }));
+}
+
+// 좀비 세션 하나 때문에 "영원히 작업 중"이 되면, 작업하지 않는 동안에도 광고를 돌려
+// 재고를 소진하고 결국 광고가 멈춘다 (CLAW-142).
+test("staleActiveMs를 넘긴 좀비 active 세션은 작업 중으로 보지 않는다 (CLAW-142)", () => {
+  const S = POLICY.staleActiveMs;
+  const zombie = makeData({ active: false });
+  writeZombie(zombie, S + 60000);
+  assert.strictEqual(isWorkActive(zombie, Date.now(), POLICY.idleThresholdMs, S), false);
+
+  // 임계 안이면 여전히 작업 중이다 — 긴 턴을 끊어버리면 안 된다.
+  const longTurn = makeData({ active: false });
+  writeZombie(longTurn, S - 60000);
+  assert.strictEqual(isWorkActive(longTurn, Date.now(), POLICY.idleThresholdMs, S), true);
+
+  // 수거(loadActivity)와 같은 규칙: 넘긴 구간은 startedAt + staleActiveMs에 끝난 것으로 본다.
+  // 그 종료 시각이 유휴 임계 안이면 아직 작업 중으로 인정한다.
+  const justPast = makeData({ active: false });
+  writeZombie(justPast, S + Math.floor(POLICY.idleThresholdMs / 2));
+  assert.strictEqual(isWorkActive(justPast, Date.now(), POLICY.idleThresholdMs, S), true);
+});
+
+test("staleActiveMs가 0이면(구 CLI 캐시) 기존 판정을 유지한다 (CLAW-142)", () => {
+  const zombie = makeData({ active: false });
+  writeZombie(zombie, POLICY.staleActiveMs * 100);
+  assert.strictEqual(isWorkActive(zombie, Date.now(), POLICY.idleThresholdMs, 0), true,
+    "값이 없다고 광고를 꺼버리면 구 CLI 사용자는 적립이 영구히 0이 된다");
+});
+
+test("정책 캐시에 activity가 없으면 staleActiveMs 0으로 동작한다 (CLAW-142)", () => {
+  const data = makeData({
+    policy: {
+      version: 1,
+      overlay: { adRotateMs: POLICY.adRotateMs, adGapMs: POLICY.adGapMs, idleThresholdMs: POLICY.idleThresholdMs, maxWidthPx: POLICY.maxWidthPx },
+      impression: { minViewMs: POLICY.minViewMs },
+      updatedAt: Date.now(),
+    },
+  });
+  assert.strictEqual(readPolicyCache(data).staleActiveMs, 0);
+  const { runtime } = runtimeWithRecorder(data);
+  assert.ok(runtime.tick(Date.now()), "구 CLI 캐시에서도 광고는 계속 표시한다");
+});
+
+test("staleActiveMs 값이 들어 있는데 형식이 틀리면 손상된 캐시로 본다 (CLAW-142)", () => {
+  for (const staleActiveMs of [-1, 1.5, "3600000"]) {
+    const data = makeData({
+      policy: {
+        version: 1,
+        overlay: { adRotateMs: POLICY.adRotateMs, adGapMs: POLICY.adGapMs, idleThresholdMs: POLICY.idleThresholdMs, maxWidthPx: POLICY.maxWidthPx },
+        impression: { minViewMs: POLICY.minViewMs },
+        activity: { staleActiveMs },
+        updatedAt: Date.now(),
+      },
+    });
+    assert.strictEqual(readPolicyCache(data), null, `staleActiveMs=${JSON.stringify(staleActiveMs)}는 거절해야 한다`);
+  }
+});
+
+// 인정되지 않은 표시가 토큰을 영구 소모하면, clawad는 캐시에서 지우지 않고 서버도 "미사용"으로
+// 세기 때문에 재고가 교착돼 광고가 완전히 멈춘다 (CLAW-142).
+test("인정되지 않은 표시는 토큰을 영구 소모하지 않는다 (CLAW-142)", () => {
+  const data = makeData({ bundles: [bundle("token.only")] });
+  const { runtime } = runtimeWithRecorder(data);
+  const start = Date.now();
+
+  // 최소 시청 시간에 못 미치게 표시하고 끝낸다 → 스풀 없음.
+  runtime.tick(start);
+  runtime.stop(start + 1000);
+  assert.strictEqual(spoolContents(data).length, 0);
+
+  // 하나뿐인 토큰이 소모 처리됐다면 여기서 null이 나온다.
+  assert.ok(runtime.tick(start + 2000), "인정 안 된 토큰은 다시 표시할 수 있어야 한다");
+});
+
+test("인정된 토큰은 다시 표시하지 않는다 (CLAW-142)", () => {
+  const data = makeData({ bundles: [bundle("token.only")] });
+  const { runtime } = runtimeWithRecorder(data);
+  const start = Date.now();
+
+  runtime.tick(start);
+  runtime.stop(start + POLICY.adRotateMs);
+  assert.strictEqual(spoolContents(data).length, 1, "인정 요청까지 갔다");
+
+  assert.strictEqual(runtime.tick(start + POLICY.adRotateMs + 1), null, "단일 사용 토큰을 재사용하면 안 된다");
+});
+
+test("계속 미달로 끝나는 토큰은 재표시 상한에서 멈춘다 (CLAW-142)", () => {
+  const data = makeData({ bundles: [bundle("token.only")] });
+  const { runtime } = runtimeWithRecorder(data);
+  let now = Date.now();
+
+  let shows = 0;
+  for (let i = 0; i < 10; i += 1) {
+    if (!runtime.tick(now)) break;
+    shows += 1;
+    now += 1000;
+    runtime.stop(now); // 매번 minViewMs 미달로 끝난다
+    now += 1000;
+  }
+  assert.strictEqual(spoolContents(data).length, 0);
+  assert.ok(shows > 1, '한 번 실패했다고 즉시 포기하면 안 된다');
+  assert.ok(shows <= 3, `무한 재시도하면 안 된다 (실제 ${shows}회)`);
 });
 
 test("광고 문구의 ANSI·제어문자를 지우고 길이를 제한한다", () => {

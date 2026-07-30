@@ -1,0 +1,114 @@
+# CLAW-92: 오버레이 릴리스 빌드. Windows·macOS를 각 러너에서 만들고, 산출물을 한곳에
+# 모아 매니페스트를 만든 뒤 릴리스에 올린다.
+#
+# 서명하지 않는다 — 알파는 무서명 배포다(CLAW-95의 예외 조항). electron-builder가
+# 키체인의 인증서를 주워 쓰지 않도록 build.mac.identity를 null로 고정해 두었다.
+# 서명을 취득하면 이 워크플로에 서명·공증 단계를 얹는다.
+#
+# 태그를 밀면(v0.1.2) 돈다. 수동 실행(workflow_dispatch)은 릴리스를 만들지 않고
+# 산출물만 남겨 빌드가 깨졌는지 확인하는 용도다.
+
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+defaults:
+  run:
+    working-directory: apps/client-desktop
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            script: build:win:all
+            artifact: dist-win
+          - os: macos-latest
+            script: build:mac:all
+            artifact: dist-mac
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.12'
+          cache: npm
+          cache-dependency-path: apps/client-desktop/package-lock.json
+
+      - run: npm ci
+
+      # 전체 스위트(npm test)는 아직 초록이 아니다 — 포크에서 제거한 기능의 테스트가
+      # 남아 33건 실패한다(CLAW-122·CLAW-140). 릴리스를 막지 않도록 지금은 이번 변경이
+      # 책임지는 매니페스트 테스트만 돌린다. 스위트가 정리되면 npm test로 바꾼다.
+      - name: 매니페스트 규약 테스트
+        run: node --test test/build-overlay-manifest.test.js
+
+      - name: 빌드
+        run: npm run ${{ matrix.script }}
+        env:
+          # 릴리스 게시는 별도 job이 한다. electron-builder가 직접 올리지 않게 막는다.
+          GH_TOKEN: ''
+
+      # 매니페스트 생성은 두 러너의 산출물이 다 모인 뒤에 한 번만 한다.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            apps/client-desktop/dist/*.exe
+            apps/client-desktop/dist/*.zip
+            apps/client-desktop/dist/*.dmg
+            apps/client-desktop/dist/*.blockmap
+            apps/client-desktop/dist/latest*.yml
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.12'
+
+      - name: 산출물 수집
+        uses: actions/download-artifact@v4
+        with:
+          path: apps/client-desktop/dist
+          merge-multiple: true
+
+      # 태그와 package.json 버전이 어긋나면 매니페스트의 URL이 실제 자산을 가리키지 않는다.
+      - name: 태그와 버전 대조
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg="$(node -p "require('./package.json').version")"
+          if [ "$tag" != "$pkg" ]; then
+            echo "태그(v$tag)와 package.json 버전($pkg)이 다릅니다." >&2
+            exit 1
+          fi
+
+      # 러너 하나가 실패한 채로 반쪽 매니페스트를 게시하지 않도록 조합을 못 박는다.
+      - name: 매니페스트 생성
+        run: npm run release:manifest -- --require=win32-x64,win32-arm64,darwin-x64,darwin-arm64
+
+      - name: 릴리스 게시
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "클로애드 오버레이 $GITHUB_REF_NAME (알파)" \
+            --notes "무서명 알파 빌드입니다. 설치는 클로애드 CLI의 setup 명령을 쓰세요." \
+            dist/*.exe dist/*.zip dist/*.dmg dist/*.blockmap dist/latest*.yml dist/overlay-manifest.json
