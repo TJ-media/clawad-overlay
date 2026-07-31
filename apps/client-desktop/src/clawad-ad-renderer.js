@@ -22,7 +22,7 @@
 
   function render(ad) {
     if (!ad || typeof ad.text !== "string" || ad.text.length === 0) {
-      strip.classList.remove("visible", "linked");
+      strip.classList.remove("visible", "linked", "notice");
       text.textContent = "";
       brand.textContent = "";
       reward.textContent = "";
@@ -32,6 +32,9 @@
     text.textContent = ad.text;
     brand.textContent = typeof ad.brand === "string" && ad.brand ? ad.brand : "";
     reward.textContent = rewardText(ad.reward);
+    // 광고일 때만 [광고]를 단다. kind가 빠져 있으면 광고로 본다 — 표기가 빠지는 쪽이 아니라
+    // 붙는 쪽으로 기울여야 안전하다 (CLAUDE.md §4).
+    strip.classList.toggle("notice", ad.kind === "login" || ad.kind === "notice");
     // 링크 여부는 메인이 검증해서 내려준다(https만). 렌더러는 URL 자체를 다루지 않는다.
     linked = ad.linked === true;
     strip.classList.toggle("linked", linked);

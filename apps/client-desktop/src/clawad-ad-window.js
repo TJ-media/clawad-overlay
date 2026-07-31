@@ -10,6 +10,8 @@
 const path = require("node:path");
 const { BrowserWindow, ipcMain, shell } = require("electron");
 const { createAdRuntime } = require("./clawad-ad-runtime");
+const clawadAuthState = require("./clawad-auth-state");
+const { LOGIN_NOTICE, rotatingNotice } = require("./clawad-ad-notices");
 const clawadSurfaceLock = require("./clawad-surface-lock");
 const { keepOutOfTaskbar } = require("./taskbar");
 
@@ -27,6 +29,14 @@ const TICK_MS = 1000;
 const STRIP_HEIGHT = 53;
 /** 펫과 광고 줄 사이 여백. */
 const PET_GAP = 6;
+/**
+ * 안내 문구를 띄울 때의 창 폭. 정책값 maxWidthPx는 광고 표시 폭이고, 미로그인 상태에는
+ * 정책 캐시 자체가 없다(정책은 sync가 받아오는데 sync는 로그인이 필요하다). 광고가 아닌
+ * 안내에까지 정책값을 요구하면 로그인 안내를 영영 못 띄운다. 정책이 있으면 그 폭을 쓴다.
+ */
+const NOTICE_WIDTH = 320;
+/** 로그인으로 해결되는 상태. 그 외(네트워크 장애 등)는 안내해도 사용자가 할 일이 없다. */
+const LOGIN_PROMPT_STATUSES = new Set(["logged-out", "login-needed", "consent-needed"]);
 
 function scaled(value, scale) {
   return Math.max(1, Math.round(value * (Number.isFinite(scale) && scale > 0 ? scale : 1)));
@@ -119,14 +129,59 @@ module.exports = function initClawadAdWindow(ctx) {
   function send(payload) {
     if (!adWindow || adWindow.isDestroyed() || !ready) return;
     // 렌더러에는 URL을 주지 않는다. 링크 여부만 알려주고 실제 열기는 메인이 한다.
+    // kind는 [광고] 표기를 붙일지 정한다 — 광고가 아닌 안내에 [광고]를 붙이지 않는다.
     adWindow.webContents.send("clawad-ad:update", payload
-      ? { text: payload.text, brand: payload.brand, reward: payload.reward, linked: Boolean(payload.clickUrl) }
+      ? {
+        kind: payload.kind,
+        text: payload.text,
+        brand: payload.brand,
+        reward: payload.reward,
+        linked: payload.kind === "login" || Boolean(payload.clickUrl),
+      }
       : null);
   }
 
-  /** 링크가 있는 광고만 클릭을 받는다. 없으면 창이 입력을 통째로 통과시킨다. */
-  function applyClickable(win, clickUrl) {
-    const clickable = Boolean(clickUrl);
+  /**
+   * 지금 무엇을 보여줄지 고른다 (CLAW-138 후속). 우선순위는 로그인 안내 → 광고 → 안내 문구다.
+   *
+   * 미로그인이 가장 앞인 이유: 그 상태에서는 번들도 정책도 내려오지 않으므로 광고가 뜰 수 없고,
+   * 사용자가 손쓸 수 있는 유일한 상태다. 안내 문구는 광고 재고가 없을 때의 자리 채움이라 맨 뒤다.
+   */
+  function choosePayload(now) {
+    const auth = readLoginPrompt();
+    if (auth) {
+      // 광고에서 안내로 넘어가는 순간 열려 있던 표시 구간을 닫는다.
+      // 안 닫으면 안내를 띄우는 내내 광고를 보여준 것으로 신고된다.
+      try { runtime.stop(now); } catch { /* 표시 전환을 막지 않는다 */ }
+      return { kind: "login", text: LOGIN_NOTICE, brand: "", reward: null, clickUrl: null, maxWidthPx: NOTICE_WIDTH };
+    }
+    const ad = runtime.tick(now);
+    if (ad) return { ...ad, kind: "ad" };
+    const context = runtime.displayContext(now);
+    if (!context) return null;
+    return {
+      kind: "notice",
+      text: rotatingNotice(now),
+      brand: "",
+      reward: null,
+      clickUrl: null,
+      maxWidthPx: context.maxWidthPx,
+    };
+  }
+
+  /** 로그인 안내를 띄울 상태인가. 로그인을 실행할 수 없으면(CLI 미설치) 누를 곳이 없으므로 띄우지 않는다. */
+  function readLoginPrompt() {
+    try {
+      const state = clawadAuthState.readAuthState({ dataDir: runtime.dataDir });
+      return state && state.canLogin && LOGIN_PROMPT_STATUSES.has(state.status) ? state : null;
+    } catch {
+      // 상태를 못 읽는다고 광고 표시를 막지 않는다.
+      return null;
+    }
+  }
+
+  /** 누를 곳이 있는 표시(링크 광고·로그인 안내)만 클릭을 받는다. 없으면 창이 입력을 통째로 통과시킨다. */
+  function applyClickable(win, clickable) {
     if (clickable === lastClickable) return;
     win.setIgnoreMouseEvents(!clickable, { forward: false });
     lastClickable = clickable;
@@ -138,6 +193,17 @@ module.exports = function initClawadAdWindow(ctx) {
    * URL은 런타임이 https만 통과시킨 값이고, 렌더러가 보낸 값을 쓰지 않는다.
    */
   function openCurrentAd() {
+    // 로그인 안내를 누르면 로그인 흐름을 띄운다. login.js가 브라우저를 열고 loopback으로 받는다 —
+    // 오버레이는 인증을 재구현하지 않는다 (clawad-auth-state.js 주석, 계약 §3.4).
+    if (lastPayload && lastPayload.kind === "login") {
+      try {
+        const result = clawadAuthState.startLogin({ dataDir: runtime.dataDir });
+        return result && result.status === "started";
+      } catch (err) {
+        console.warn("ClawAd: failed to start login:", err && err.message);
+        return false;
+      }
+    }
     const url = lastPayload && lastPayload.clickUrl;
     if (!url) return false;
     try {
@@ -166,7 +232,7 @@ module.exports = function initClawadAdWindow(ctx) {
     const win = ensureWindow();
     if (!win || win.isDestroyed()) return;
     applyBounds(win, payload.maxWidthPx);
-    applyClickable(win, payload.clickUrl);
+    applyClickable(win, payload.kind === "login" || Boolean(payload.clickUrl));
     send(payload);
     if (!win.isVisible()) {
       win.showInactive();
@@ -179,7 +245,7 @@ module.exports = function initClawadAdWindow(ctx) {
     lastPayload = null;
     if (!adWindow || adWindow.isDestroyed()) return;
     send(null);
-    applyClickable(adWindow, null);
+    applyClickable(adWindow, false);
     if (adWindow.isVisible()) adWindow.hide();
   }
 
@@ -198,18 +264,25 @@ module.exports = function initClawadAdWindow(ctx) {
    */
   function tick() {
     const petHidden = typeof ctx.petHidden === "boolean" ? ctx.petHidden : false;
-    if (petHidden || !runtime.canRender()) {
+    if (petHidden) {
       suspend();
       releaseSurface();
       return;
     }
+    // 광고·안내·로그인 중 무엇을 띄울지는 choosePayload가 정한다. 광고 재고가 없어도
+    // 안내 문구가 남으므로 canRender()로 미리 잘라내지 않는다.
+    const payload = choosePayload(Date.now());
+    if (!payload) {
+      suspend();
+      releaseSurface();
+      return;
+    }
+    // 안내를 띄울 때도 락을 쥔다 — 오버레이가 둘 뜨면 안내도 둘로 보인다.
     if (!clawadSurfaceLock.ownsAdSurface() && !clawadSurfaceLock.acquireAdSurface()) {
       suspend();
       return;
     }
-    const payload = runtime.tick();
-    if (payload) showAd(payload);
-    else hideAd();
+    showAd(payload);
   }
 
   function releaseSurface() {

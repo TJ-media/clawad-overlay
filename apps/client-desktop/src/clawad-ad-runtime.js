@@ -364,8 +364,21 @@ function createAdRuntime(options = {}) {
     return Boolean(readPolicyCache(dataDir)) && readBundles(dataDir, now).length > 0;
   }
 
+  /**
+   * 광고 재고와 **무관하게** 지금 이 창을 띄워도 되는 맥락인가 (CLAW-138 후속).
+   * canRender와 달리 번들 유무를 보지 않는다 — 재고가 없을 때 안내 문구를 띄우기 위한 것이다.
+   * 안내도 광고와 같은 조건(정책 있음 + 작업 중)에서만 뜬다. 놀고 있을 때 띄우면 잔소리가 된다.
+   */
+  function displayContext(now = Date.now()) {
+    const policy = readPolicyCache(dataDir);
+    if (!policy) return null;
+    if (!isWorkActive(dataDir, now, policy.idleThresholdMs, policy.staleActiveMs)) return null;
+    return { maxWidthPx: policy.maxWidthPx };
+  }
+
   return {
     canRender,
+    displayContext,
     stop,
     tick,
     get dataDir() { return dataDir; },

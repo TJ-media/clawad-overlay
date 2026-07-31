@@ -533,3 +533,26 @@ test("BOM이 붙은 적립 요약도 읽는다", () => {
 
   assert.deepStrictEqual(readRewardSummary(data), { verifying: 3, confirmed: 9 });
 });
+
+test("displayContext는 광고 재고가 없어도 작업 중이면 맥락을 돌려준다 — 안내 문구용", () => {
+  const withAds = makeData();
+  assert.deepStrictEqual(runtimeWithRecorder(withAds).runtime.displayContext(Date.now()),
+    { maxWidthPx: POLICY.maxWidthPx });
+
+  // 번들이 비어도 맥락은 남는다. canRender와 갈리는 지점이 여기다.
+  const noAds = makeData({ bundles: [] });
+  const runtime = runtimeWithRecorder(noAds).runtime;
+  assert.strictEqual(runtime.canRender(Date.now()), false, "표시할 광고는 없다");
+  assert.deepStrictEqual(runtime.displayContext(Date.now()), { maxWidthPx: POLICY.maxWidthPx },
+    "안내 문구는 띄울 수 있어야 한다");
+});
+
+test("displayContext는 정책이 없거나 작업 중이 아니면 null이다", () => {
+  assert.strictEqual(runtimeWithRecorder(makeData({ policy: null })).runtime.displayContext(Date.now()), null,
+    "정책이 없으면 안내도 띄우지 않는다");
+
+  const idle = makeData({ active: false });
+  writeActive(idle, { active: false, endedAgoMs: POLICY.idleThresholdMs + 60000 });
+  assert.strictEqual(runtimeWithRecorder(idle).runtime.displayContext(Date.now()), null,
+    "놀고 있을 때 띄우면 잔소리가 된다");
+});

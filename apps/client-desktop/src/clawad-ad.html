@@ -89,7 +89,8 @@
 
       /* [광고] 표기는 표시광고법 요건이다. 마크업에 고정해 광고 문구와 무관하게 항상 렌더된다.
          제거·변경 금지 (clawad-overlay CLAUDE.md §4). */
-      #label {
+      #label,
+      #notice-label {
         flex: 0 0 auto;
         padding: 1px 5px;
         border-radius: 4px;
@@ -100,12 +101,26 @@
         letter-spacing: -0.2px;
       }
 
+      /* 광고가 아닌 안내를 띄울 때만 [안내]로 바꿔 단다. [광고] 텍스트 자체는 어떤 코드도
+         건드리지 않는다 — 스크립트가 고쳐 쓸 수 있으면 그게 곧 제거 경로가 된다.
+         안내 문구는 clawad-ad-notices.js의 로컬 상수뿐이라 서버 문자열이 이 경로로 나갈 수 없다. */
+      #notice-label { display: none; }
+      #strip.notice #label { display: none; }
+      #strip.notice #notice-label { display: inline; }
+
       #text {
         flex: 1 1 auto;
         min-width: 0;
         overflow: hidden;
         white-space: nowrap;
         text-overflow: ellipsis;
+      }
+
+      /* 누를 수 있는 표시는 문구에 밑줄을 둔다. ↗만으로는 눌리는 줄 모른다는 피드백. */
+      #strip.linked #text {
+        text-decoration: underline;
+        text-decoration-color: var(--text-muted);
+        text-underline-offset: 2px;
       }
 
       /* 2행에서 폭이 모자라면 광고주명이 먼저 줄어든다 (CLAW-138).
@@ -145,6 +160,7 @@
     <div id="strip">
       <div id="row1">
         <span id="label">[광고]</span>
+        <span id="notice-label">[안내]</span>
         <span id="text"></span>
       </div>
       <div id="row2">
