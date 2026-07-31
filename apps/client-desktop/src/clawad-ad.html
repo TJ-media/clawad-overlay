@@ -73,7 +73,9 @@
         min-width: 0;
       }
 
+      /* 2행은 오른쪽 정렬. 1행 문구는 왼쪽에서 흐르고 2행 부가정보는 오른쪽 끝에 모인다. */
       #row2 {
+        justify-content: flex-end;
         font-size: 11px;
         color: var(--text-muted);
         line-height: 1.2;
@@ -136,7 +138,7 @@
         font-size: 11px;
       }
 
-      #strip.linked #open { display: inline; margin-left: auto; }
+      #strip.linked #open { display: inline; }
     </style>
   </head>
   <body>
