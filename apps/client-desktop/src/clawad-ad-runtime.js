@@ -22,6 +22,8 @@ const POLICY_CACHE_NAME = "overlay-policy.json";
 const POLICY_CACHE_VERSION = 1;
 const REWARD_SUMMARY_NAME = "reward-summary.json";
 const REWARD_SUMMARY_VERSION = 1;
+const AD_INVENTORY_NAME = "ad-inventory.json";
+const AD_INVENTORY_VERSION = 1;
 const TRIGGER_FILE_NAME = "overlay-trigger.json";
 const TRIGGER_VERSION = 1;
 /** 트리거로 실행을 허용하는 스크립트 파일명. 포인터가 가리키는 임의 경로를 실행하지 않는다 (§3.3). */
@@ -108,6 +110,21 @@ function readRewardSummary(dataDir) {
   // 0은 정상값이다(적립 전). positiveInt를 쓰면 갓 시작한 사용자에게만 표시가 사라진다.
   if (!nonNegativeInt(summary.verifyingPoints) || !nonNegativeInt(summary.confirmedPoints)) return null;
   return { verifying: summary.verifyingPoints, confirmed: summary.confirmedPoints };
+}
+
+/**
+ * 오늘 광고를 다 소진했는가 (CLAW-138 후속). clawad가 내려주는 신호이고 **선택 항목이다** —
+ * adGapMs·staleActiveMs와 같은 이유다: 이 파일을 쓰기 시작한 CLI가 아직 안 깔린 조합이 실제로
+ * 생기므로(오버레이는 자동 업데이트, CLI는 수동) 없다고 해서 동작을 바꾸면 안 된다.
+ *
+ * 없으면 false = 기존 동작(재고 없음 → 일반 안내 문구). "잠깐 재고가 없음"과 "오늘 다 봄"은
+ * 다른 상태이고, 그 구분은 서버만 안다 — 오버레이가 번들 개수로 추정하지 않는다.
+ * 값이 정확히 true일 때만 소진으로 본다. 손상된 값으로 없는 상태를 만들지 않기 위해서다.
+ */
+function readAdInventoryExhausted(dataDir) {
+  const inventory = readJsonFile(path.join(dataDir, AD_INVENTORY_NAME));
+  if (!inventory || inventory.version !== AD_INVENTORY_VERSION) return false;
+  return inventory.exhausted === true;
 }
 
 /** 표시 후보 번들. 읽기 전용이다 — 오버레이는 bundles.json을 쓰지 않는다 (§2). */
@@ -373,7 +390,11 @@ function createAdRuntime(options = {}) {
     const policy = readPolicyCache(dataDir);
     if (!policy) return null;
     if (!isWorkActive(dataDir, now, policy.idleThresholdMs, policy.staleActiveMs)) return null;
-    return { maxWidthPx: policy.maxWidthPx };
+    return {
+      maxWidthPx: policy.maxWidthPx,
+      exhausted: readAdInventoryExhausted(dataDir),
+      reward: readRewardSummary(dataDir),
+    };
   }
 
   return {
@@ -406,6 +427,7 @@ module.exports = {
   TRIGGER_SCRIPT_BASENAME,
   createAdRuntime,
   isWorkActive,
+  readAdInventoryExhausted,
   readBundles,
   readPolicyCache,
   readRewardSummary,

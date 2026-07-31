@@ -11,7 +11,7 @@ const path = require("node:path");
 const { BrowserWindow, ipcMain, shell } = require("electron");
 const { createAdRuntime } = require("./clawad-ad-runtime");
 const clawadAuthState = require("./clawad-auth-state");
-const { LOGIN_NOTICE, rotatingNotice } = require("./clawad-ad-notices");
+const { ADS_EXHAUSTED_NOTICE, LOGIN_NOTICE, rotatingNotice } = require("./clawad-ad-notices");
 const clawadSurfaceLock = require("./clawad-surface-lock");
 const { keepOutOfTaskbar } = require("./taskbar");
 
@@ -23,10 +23,11 @@ const isLinux = process.platform === "linux";
 const TICK_MS = 1000;
 /**
  * 2행 패널 높이(논리 픽셀). 세션 HUD처럼 body 여백을 두므로 그만큼 더 잡는다. 폭은 정책값 maxWidthPx.
- * 1행 17 + 행간 2 + 2행 14 + 패널 상하 패딩 10 + body 상하 여백 8 = 51에 여유 2 (CLAW-138).
+ * 1행 17 + 행간 2 + 2행 14 + 패널 상하 패딩 10 + body 상하 여백 10 = 53에 여유 2 (CLAW-138).
  * 실측값이다 — 행 높이는 폰트 스택의 line-height에 달려 있어 줄이면 2행이 잘린다.
+ * body 여백은 세션 HUD와 같은 값(2px/8px)이라 두 패널이 같은 자리에 같은 크기로 앉는다.
  */
-const STRIP_HEIGHT = 53;
+const STRIP_HEIGHT = 55;
 /** 펫과 광고 줄 사이 여백. */
 const PET_GAP = 6;
 /**
@@ -162,11 +163,22 @@ module.exports = function initClawadAdWindow(ctx) {
     return {
       kind: "notice",
       text: rotatingNotice(now),
-      brand: "",
-      reward: null,
+      // 2행 왼쪽은 광고일 때 광고주가 앉는 자리다. 안내에서는 비어 있고,
+      // 오늘 광고를 다 본 상태일 때만 그 사실을 적는다. 오른쪽은 그대로 적립 현황이다.
+      brand: context.exhausted ? ADS_EXHAUSTED_NOTICE : "",
+      reward: context.reward,
       clickUrl: null,
       maxWidthPx: context.maxWidthPx,
     };
+  }
+
+  /** 세션 목록(세션 HUD)이 떠 있는가. 알 수 없으면 false — 모르는 이유로 광고를 멈추지 않는다. */
+  function isSessionHudVisible() {
+    try {
+      return typeof ctx.sessionHudVisible === "function" ? ctx.sessionHudVisible() === true : false;
+    } catch {
+      return false;
+    }
   }
 
   /** 로그인 안내를 띄울 상태인가. 로그인을 실행할 수 없으면(CLI 미설치) 누를 곳이 없으므로 띄우지 않는다. */
@@ -267,6 +279,12 @@ module.exports = function initClawadAdWindow(ctx) {
     if (petHidden) {
       suspend();
       releaseSurface();
+      return;
+    }
+    // 펫을 클릭해 세션 목록이 열려 있으면 비켜준다. 둘 다 펫 아래에 붙어서 겹치는데,
+    // 사용자가 방금 눌러서 띄운 쪽이 우선이다. 락은 쥔 채로 둔다 — 목록을 닫으면 바로 돌아온다.
+    if (isSessionHudVisible()) {
+      suspend();
       return;
     }
     // 광고·안내·로그인 중 무엇을 띄울지는 choosePayload가 정한다. 광고 재고가 없어도

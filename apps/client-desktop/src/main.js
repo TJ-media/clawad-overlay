@@ -2031,6 +2031,11 @@ getQuotaRingWindow = _sessionHud.getQuotaRingWindow;
 const _clawadAd = require("./clawad-ad-window")({
   get win() { return win; },
   get petHidden() { return petWindowRuntime.isPetHidden(); },
+  // 세션 목록이 열려 있으면 광고를 비켜준다 — 둘 다 펫 아래에 붙어서 겹친다.
+  sessionHudVisible: () => {
+    const hud = typeof getSessionHudWindow === "function" ? getSessionHudWindow() : null;
+    return Boolean(hud && !hud.isDestroyed() && hud.isVisible());
+  },
   getPetWindowBounds,
   getNearestWorkArea,
   getTextScale: () => getTextScaleForPetWindows(),

@@ -24,6 +24,12 @@ const IDLE_NOTICES = [
 const LOGIN_NOTICE = "로그인하면 광고가 표시되고 리워드가 적립돼요!";
 
 /**
+ * 오늘 광고를 다 본 상태. 2행 왼쪽(광고주 자리)에 들어가고 오른쪽에는 적립 현황이 붙는다.
+ * "재고가 잠깐 없음"과 다른 상태라서 clawad가 신호를 줄 때만 쓴다 — 오버레이가 추정하지 않는다.
+ */
+const ADS_EXHAUSTED_NOTICE = "오늘 광고를 다 소진했어요!";
+
+/**
  * 지금 보여줄 안내 문구. 타이머 상태를 두지 않고 시각에서 바로 계산한다 —
  * 창이 떴다 사라져도 회전이 이어지고, 재시작해도 같은 리듬을 탄다.
  */
@@ -33,6 +39,7 @@ function rotatingNotice(now = Date.now()) {
 }
 
 module.exports = {
+  ADS_EXHAUSTED_NOTICE,
   IDLE_NOTICES,
   LOGIN_NOTICE,
   NOTICE_ROTATE_MS,

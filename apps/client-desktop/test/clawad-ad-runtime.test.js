@@ -11,6 +11,7 @@ const path = require("node:path");
 const {
   createAdRuntime,
   isWorkActive,
+  readAdInventoryExhausted,
   readPolicyCache,
   readRewardSummary,
   readTriggerPointer,
@@ -535,16 +536,15 @@ test("BOM이 붙은 적립 요약도 읽는다", () => {
 });
 
 test("displayContext는 광고 재고가 없어도 작업 중이면 맥락을 돌려준다 — 안내 문구용", () => {
+  const idle = { maxWidthPx: POLICY.maxWidthPx, exhausted: false, reward: null };
   const withAds = makeData();
-  assert.deepStrictEqual(runtimeWithRecorder(withAds).runtime.displayContext(Date.now()),
-    { maxWidthPx: POLICY.maxWidthPx });
+  assert.deepStrictEqual(runtimeWithRecorder(withAds).runtime.displayContext(Date.now()), idle);
 
   // 번들이 비어도 맥락은 남는다. canRender와 갈리는 지점이 여기다.
   const noAds = makeData({ bundles: [] });
   const runtime = runtimeWithRecorder(noAds).runtime;
   assert.strictEqual(runtime.canRender(Date.now()), false, "표시할 광고는 없다");
-  assert.deepStrictEqual(runtime.displayContext(Date.now()), { maxWidthPx: POLICY.maxWidthPx },
-    "안내 문구는 띄울 수 있어야 한다");
+  assert.deepStrictEqual(runtime.displayContext(Date.now()), idle, "안내 문구는 띄울 수 있어야 한다");
 });
 
 test("displayContext는 정책이 없거나 작업 중이 아니면 null이다", () => {
@@ -555,4 +555,50 @@ test("displayContext는 정책이 없거나 작업 중이 아니면 null이다",
   writeActive(idle, { active: false, endedAgoMs: POLICY.idleThresholdMs + 60000 });
   assert.strictEqual(runtimeWithRecorder(idle).runtime.displayContext(Date.now()), null,
     "놀고 있을 때 띄우면 잔소리가 된다");
+});
+
+// --- 광고 소진 신호 (CLAW-138 후속) ---
+
+function writeInventory(dataDir, inventory) {
+  fs.writeFileSync(path.join(dataDir, "ad-inventory.json"), JSON.stringify(inventory));
+  return dataDir;
+}
+
+test("소진 신호가 없으면 소진이 아니다 — 구 CLI 조합에서 없는 상태를 만들지 않는다", () => {
+  assert.strictEqual(readAdInventoryExhausted(makeData()), false, "파일 없음");
+
+  const cases = [
+    ["버전 불일치", { version: 2, exhausted: true }],
+    ["문자열", { version: 1, exhausted: "true" }],
+    ["1", { version: 1, exhausted: 1 }],
+    ["필드 없음", { version: 1 }],
+  ];
+  for (const [label, inventory] of cases) {
+    assert.strictEqual(readAdInventoryExhausted(writeInventory(makeData(), inventory)), false, label);
+  }
+});
+
+test("exhausted가 정확히 true일 때만 소진으로 본다", () => {
+  assert.strictEqual(readAdInventoryExhausted(writeInventory(makeData(), { version: 1, exhausted: true })), true);
+  assert.strictEqual(readAdInventoryExhausted(writeInventory(makeData(), { version: 1, exhausted: false })), false);
+});
+
+test("displayContext는 소진 여부와 적립 현황을 함께 실어 준다 — 안내 2행 구성용", () => {
+  const data = makeData({ bundles: [] });
+  writeInventory(data, { version: 1, exhausted: true });
+  fs.writeFileSync(path.join(data, "reward-summary.json"),
+    JSON.stringify({ version: 1, verifyingPoints: 150, confirmedPoints: 2000 }));
+
+  assert.deepStrictEqual(runtimeWithRecorder(data).runtime.displayContext(Date.now()), {
+    maxWidthPx: POLICY.maxWidthPx,
+    exhausted: true,
+    reward: { verifying: 150, confirmed: 2000 },
+  });
+});
+
+test("소진 신호는 광고 표시를 막지 않는다 — 재고가 남아 있으면 그대로 보여준다", () => {
+  // 신호와 재고가 어긋난 순간(소진 직전 받아둔 번들)에 화면을 비우지 않는다.
+  const data = writeInventory(makeData(), { version: 1, exhausted: true });
+
+  assert.ok(runtimeWithRecorder(data).runtime.tick(Date.now()), "번들이 있으면 광고가 우선이다");
 });
