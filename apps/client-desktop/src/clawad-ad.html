@@ -49,17 +49,34 @@
 
       #strip {
         display: flex;
-        align-items: center;
-        gap: 5px;
+        flex-direction: column;
+        justify-content: center;
+        gap: 2px;
         width: 100%;
         height: 100%;
-        padding: 0 8px;
+        padding: 5px 8px;
         border: 1px solid var(--panel-border);
         border-radius: 8px;
         background: var(--panel-bg);
         box-shadow: 0 8px 18px -12px var(--shadow), 0 2px 4px rgba(0, 0, 0, 0.1);
         opacity: 0;
         transition: opacity 160ms ease-out, background 100ms ease;
+      }
+
+      /* 2행 구조 (CLAW-138): 1행은 [광고]+문구, 2행은 광고주·적립 현황.
+         좁은 폭에서 답답해 보이지 않게 행 간격은 2px만 두고 2행을 한 단계 작게 쓴다. */
+      #row1,
+      #row2 {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        min-width: 0;
+      }
+
+      #row2 {
+        font-size: 11px;
+        color: var(--text-muted);
+        line-height: 1.2;
       }
 
       #strip.visible { opacity: 1; }
@@ -89,17 +106,27 @@
         text-overflow: ellipsis;
       }
 
-      /* 브랜드는 광고주 식별이라 자르지 않는다. 길이가 부족하면 문구(#text)가 먼저 줄어든다. */
+      /* 2행에서 폭이 모자라면 광고주명이 먼저 줄어든다 (CLAW-138).
+         적립 수치를 자르면 "407P"가 "40…"으로 읽혀 금액을 잘못 보여주게 되므로, 잘려도 알아볼 수
+         있는 광고주명 쪽을 말줄임한다. 광고주 식별 자체는 말줄임 뒤에도 남는다. */
       #brand {
-        flex: 0 0 auto;
-        max-width: 45%;
+        flex: 0 1 auto;
+        min-width: 0;
         overflow: hidden;
         white-space: nowrap;
         text-overflow: ellipsis;
-        color: var(--text-muted);
       }
 
       #brand:empty { display: none; }
+      #brand:not(:empty) ~ #reward::before { content: "· "; }
+
+      /* 적립 현황. 서버가 계산해 내려준 값을 그대로 보여준다 — 자르지 않는다. */
+      #reward {
+        flex: 0 0 auto;
+        white-space: nowrap;
+      }
+
+      #reward:empty { display: none; }
 
       /* 링크 표식. 클릭 가능한 광고에만 보인다. */
       #open {
@@ -109,15 +136,20 @@
         font-size: 11px;
       }
 
-      #strip.linked #open { display: inline; }
+      #strip.linked #open { display: inline; margin-left: auto; }
     </style>
   </head>
   <body>
     <div id="strip">
-      <span id="label">[광고]</span>
-      <span id="text"></span>
-      <span id="brand"></span>
-      <span id="open" aria-hidden="true">↗</span>
+      <div id="row1">
+        <span id="label">[광고]</span>
+        <span id="text"></span>
+      </div>
+      <div id="row2">
+        <span id="brand"></span>
+        <span id="reward"></span>
+        <span id="open" aria-hidden="true">↗</span>
+      </div>
     </div>
     <script src="clawad-ad-renderer.js"></script>
   </body>

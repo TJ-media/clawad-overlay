@@ -12,6 +12,7 @@ const {
   createAdRuntime,
   isWorkActive,
   readPolicyCache,
+  readRewardSummary,
   readTriggerPointer,
   safeClickUrl,
   safeText,
@@ -468,4 +469,67 @@ test("BOM이 붙은 정책 캐시·번들도 읽는다", () => {
 
   const { runtime } = runtimeWithRecorder(data);
   assert.ok(runtime.tick(Date.now()), "BOM 때문에 광고가 사라지면 안 된다");
+});
+
+// --- 적립 현황 2행 표시 (CLAW-138) ---
+
+function writeReward(dataDir, summary) {
+  fs.writeFileSync(path.join(dataDir, "reward-summary.json"), JSON.stringify(summary));
+  return dataDir;
+}
+
+test("적립 현황은 서버가 내려준 정수를 그대로 payload에 싣는다", () => {
+  const data = writeReward(makeData(), { version: 1, verifyingPoints: 12, confirmedPoints: 407, fetchedAt: Date.now() });
+
+  const ad = runtimeWithRecorder(data).runtime.tick(Date.now());
+
+  assert.deepStrictEqual(ad.reward, { verifying: 12, confirmed: 407 });
+});
+
+test("적립이 0이어도 표시한다 — 갓 시작한 사용자에게만 2행이 사라지면 안 된다", () => {
+  const data = writeReward(makeData(), { version: 1, verifyingPoints: 0, confirmedPoints: 0, fetchedAt: Date.now() });
+
+  assert.deepStrictEqual(runtimeWithRecorder(data).runtime.tick(Date.now()).reward, { verifying: 0, confirmed: 0 });
+});
+
+test("적립 파일이 없거나 깨져 있어도 광고는 계속 뜬다 — 적립 표시만 빠진다", () => {
+  const cases = [
+    ["파일 없음", null],
+    ["버전 불일치", { version: 2, verifyingPoints: 1, confirmedPoints: 1 }],
+    ["음수", { version: 1, verifyingPoints: -1, confirmedPoints: 10 }],
+    ["정수 아님", { version: 1, verifyingPoints: 1.5, confirmedPoints: 10 }],
+    ["문자열", { version: 1, verifyingPoints: "12", confirmedPoints: 10 }],
+    ["필드 없음", { version: 1, fetchedAt: Date.now() }],
+  ];
+  for (const [label, summary] of cases) {
+    const data = makeData();
+    if (summary) writeReward(data, summary);
+
+    const ad = runtimeWithRecorder(data).runtime.tick(Date.now());
+
+    assert.ok(ad, `${label}: 광고 자체는 계속 표시해야 한다`);
+    assert.strictEqual(ad.reward, null, `${label}: 적립은 표시하지 않는다`);
+  }
+});
+
+test("적립 현황은 매 tick 다시 읽는다 — 같은 광고를 보여주는 동안 sync가 갱신하면 반영된다", () => {
+  const data = writeReward(makeData(), { version: 1, verifyingPoints: 0, confirmedPoints: 407 });
+  const { runtime } = runtimeWithRecorder(data);
+  const start = Date.now();
+
+  assert.strictEqual(runtime.tick(start).reward.confirmed, 407);
+  writeReward(data, { version: 1, verifyingPoints: 0, confirmedPoints: 500 });
+
+  // 회전 주기 안이라 같은 소재를 유지하는 경로에서도 갱신돼야 한다
+  const ad = runtime.tick(start + 1000);
+  assert.strictEqual(ad.text, "광고 token.a", "같은 소재를 유지하는 구간이어야 한다");
+  assert.strictEqual(ad.reward.confirmed, 500);
+});
+
+test("BOM이 붙은 적립 요약도 읽는다", () => {
+  const data = writeReward(makeData(), { version: 1, verifyingPoints: 3, confirmedPoints: 9 });
+  const file = path.join(data, "reward-summary.json");
+  fs.writeFileSync(file, `﻿${fs.readFileSync(file, "utf8")}`);
+
+  assert.deepStrictEqual(readRewardSummary(data), { verifying: 3, confirmed: 9 });
 });

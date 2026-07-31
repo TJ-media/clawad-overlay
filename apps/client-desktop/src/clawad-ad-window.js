@@ -19,8 +19,12 @@ const isLinux = process.platform === "linux";
 
 /** 표시 재평가 주기. 노출 빈도 정책이 아니라 "지금 무엇을 보여줄지" 다시 계산하는 간격이다. */
 const TICK_MS = 1000;
-/** 한 줄 패널 높이(논리 픽셀). 세션 HUD처럼 body 여백을 두므로 그만큼 더 잡는다. 폭은 정책값 maxWidthPx. */
-const STRIP_HEIGHT = 34;
+/**
+ * 2행 패널 높이(논리 픽셀). 세션 HUD처럼 body 여백을 두므로 그만큼 더 잡는다. 폭은 정책값 maxWidthPx.
+ * 1행 17 + 행간 2 + 2행 14 + 패널 상하 패딩 10 + body 상하 여백 8 = 51에 여유 2 (CLAW-138).
+ * 실측값이다 — 행 높이는 폰트 스택의 line-height에 달려 있어 줄이면 2행이 잘린다.
+ */
+const STRIP_HEIGHT = 53;
 /** 펫과 광고 줄 사이 여백. */
 const PET_GAP = 6;
 
@@ -116,7 +120,7 @@ module.exports = function initClawadAdWindow(ctx) {
     if (!adWindow || adWindow.isDestroyed() || !ready) return;
     // 렌더러에는 URL을 주지 않는다. 링크 여부만 알려주고 실제 열기는 메인이 한다.
     adWindow.webContents.send("clawad-ad:update", payload
-      ? { text: payload.text, brand: payload.brand, linked: Boolean(payload.clickUrl) }
+      ? { text: payload.text, brand: payload.brand, reward: payload.reward, linked: Boolean(payload.clickUrl) }
       : null);
   }
 

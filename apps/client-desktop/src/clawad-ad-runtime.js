@@ -20,6 +20,8 @@ const SPOOL_VERSION = 1;
 const SPOOL_DIR_NAME = "overlay-events";
 const POLICY_CACHE_NAME = "overlay-policy.json";
 const POLICY_CACHE_VERSION = 1;
+const REWARD_SUMMARY_NAME = "reward-summary.json";
+const REWARD_SUMMARY_VERSION = 1;
 const TRIGGER_FILE_NAME = "overlay-trigger.json";
 const TRIGGER_VERSION = 1;
 /** 트리거로 실행을 허용하는 스크립트 파일명. 포인터가 가리키는 임의 경로를 실행하지 않는다 (§3.3). */
@@ -47,6 +49,10 @@ function readJsonFile(file) {
 
 function positiveInt(value) {
   return Number.isInteger(value) && value > 0;
+}
+
+function nonNegativeInt(value) {
+  return Number.isInteger(value) && value >= 0;
 }
 
 /**
@@ -86,6 +92,22 @@ function readPolicyCache(dataDir) {
     minViewMs: impression.minViewMs,
     staleActiveMs,
   };
+}
+
+/**
+ * 적립 현황 (CLAW-138). 서버가 계산해 sync가 내려준 값을 **그대로 표시하기 위해서만** 읽는다.
+ * 오버레이는 포인트를 계산하지 않는다 (CLAUDE.md §2 [CRITICAL]) — 노출당 단가는 serveToken 안에
+ * 있지만 그것을 열어 곱하지 않는다. 여기서 하는 일은 두 정수를 읽어 넘기는 것뿐이다.
+ *
+ * 파일이 없거나(미로그인·첫 sync 이전) 형식이 어긋나면 null이고, 2행에서 적립 표시만 빠진다 —
+ * 광고 자체는 계속 뜬다. 적립 표시는 광고 표시의 전제 조건이 아니다.
+ */
+function readRewardSummary(dataDir) {
+  const summary = readJsonFile(path.join(dataDir, REWARD_SUMMARY_NAME));
+  if (!summary || summary.version !== REWARD_SUMMARY_VERSION) return null;
+  // 0은 정상값이다(적립 전). positiveInt를 쓰면 갓 시작한 사용자에게만 표시가 사라진다.
+  if (!nonNegativeInt(summary.verifyingPoints) || !nonNegativeInt(summary.confirmedPoints)) return null;
+  return { verifying: summary.verifyingPoints, confirmed: summary.confirmedPoints };
 }
 
 /** 표시 후보 번들. 읽기 전용이다 — 오버레이는 bundles.json을 쓰지 않는다 (§2). */
@@ -151,12 +173,13 @@ function safeClickUrl(value) {
   }
 }
 
-function displayPayload(bundle, maxWidthPx) {
+function displayPayload(bundle, maxWidthPx, reward) {
   return {
     text: safeText(bundle.ad.text, MAX_AD_TEXT_LENGTH) || "광고",
     brand: safeText(bundle.ad.brand, MAX_AD_BRAND_LENGTH),
     clickUrl: safeClickUrl(bundle.clickUrl),
     maxWidthPx,
+    reward,
   };
 }
 
@@ -317,7 +340,8 @@ function createAdRuntime(options = {}) {
     // (CLAW-135) — 인정 구간 시작은 adGapMs만큼 뒤로 밀리므로, 그걸 기준으로 삼으면 화면
     // 회전 주기가 같이 늘어난다. 화면 리듬은 adRotateMs 그대로 유지한다.
     if (current && currentBundle && now - current.renderStarted < policy.adRotateMs) {
-      return displayPayload(currentBundle, policy.maxWidthPx);
+      // 적립 현황은 매 tick 다시 읽는다 — 같은 소재를 보여주는 동안 sync가 값을 갱신하면 반영된다.
+      return displayPayload(currentBundle, policy.maxWidthPx, readRewardSummary(dataDir));
     }
     // finishCurrent가 current를 비우므로 직전 소재를 미리 잡아둔다 — 연속 반복 방지용이다.
     const previousToken = current ? current.serveToken : null;
@@ -327,7 +351,7 @@ function createAdRuntime(options = {}) {
     if (!bundle) return null;
     currentBundle = bundle;
     current = { serveToken: bundle.serveToken, renderStarted: now, displayStartedAt: countedStartAt(now, policy) };
-    return displayPayload(bundle, policy.maxWidthPx);
+    return displayPayload(bundle, policy.maxWidthPx, readRewardSummary(dataDir));
   }
 
   /** 종료·일시중지에서 호출한다. 표시 중이던 구간을 닫고 스풀에 남긴다. */
@@ -371,6 +395,7 @@ module.exports = {
   isWorkActive,
   readBundles,
   readPolicyCache,
+  readRewardSummary,
   readTriggerPointer,
   safeClickUrl,
   safeText,
