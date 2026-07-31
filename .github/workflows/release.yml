@@ -53,15 +53,17 @@ jobs:
       - name: 매니페스트 규약 테스트
         run: node --test test/build-overlay-manifest.test.js
 
-      # 릴리스 게시는 아래 publish job이 한다. electron-builder가 직접 올리지 않게 막는다.
+      # 릴리스 게시는 아래 publish job이 한다. electron-builder가 직접 올리지 않게
+      # `--publish never`로 막는데, 그 플래그는 **package.json의 빌드 스크립트 안에** 있다.
       #
-      # 끄는 방법은 --publish never다. 예전에는 GH_TOKEN을 빈 문자열로 두는 것으로 막으려
-      # 했는데 그건 게시를 끄지 못한다 — electron-builder는 태그 빌드에서 GitHub 원격을
-      # 감지하면 게시 대상을 스스로 만들고(artifactCreatedWithoutExplicitPublishConfig),
-      # 그때 토큰이 비어 있어서 "GitHub Personal Access Token is not set"으로 죽는다.
-      # 그래서 v0.1.2·v0.1.3 태그 빌드가 산출물을 만들고도 실패했다.
+      # 여기서 `npm run X -- --publish never`로 넘기면 안 된다. Windows 러너의 셸은
+      # pwsh이고 `--`가 그 과정에서 사라져 `electron-builder ... never`가 되어
+      # "Unknown target: never"로 죽는다. macOS(bash)에서만 통과해 반쪽으로 실패한다.
+      #
+      # 플래그가 없으면 electron-builder가 태그를 보고 스스로 게시를 시도하다
+      # "GitHub Personal Access Token is not set"으로 죽는다 — v0.1.2·v0.1.3이 그랬다.
       - name: 빌드
-        run: npm run ${{ matrix.script }} -- --publish never
+        run: npm run ${{ matrix.script }}
 
       # 매니페스트 생성은 두 러너의 산출물이 다 모인 뒤에 한 번만 한다.
       - uses: actions/upload-artifact@v4
