@@ -53,11 +53,15 @@ jobs:
       - name: 매니페스트 규약 테스트
         run: node --test test/build-overlay-manifest.test.js
 
+      # 릴리스 게시는 아래 publish job이 한다. electron-builder가 직접 올리지 않게 막는다.
+      #
+      # 끄는 방법은 --publish never다. 예전에는 GH_TOKEN을 빈 문자열로 두는 것으로 막으려
+      # 했는데 그건 게시를 끄지 못한다 — electron-builder는 태그 빌드에서 GitHub 원격을
+      # 감지하면 게시 대상을 스스로 만들고(artifactCreatedWithoutExplicitPublishConfig),
+      # 그때 토큰이 비어 있어서 "GitHub Personal Access Token is not set"으로 죽는다.
+      # 그래서 v0.1.2·v0.1.3 태그 빌드가 산출물을 만들고도 실패했다.
       - name: 빌드
-        run: npm run ${{ matrix.script }}
-        env:
-          # 릴리스 게시는 별도 job이 한다. electron-builder가 직접 올리지 않게 막는다.
-          GH_TOKEN: ''
+        run: npm run ${{ matrix.script }} -- --publish never
 
       # 매니페스트 생성은 두 러너의 산출물이 다 모인 뒤에 한 번만 한다.
       - uses: actions/upload-artifact@v4
