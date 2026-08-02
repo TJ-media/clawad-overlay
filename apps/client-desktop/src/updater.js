@@ -94,27 +94,10 @@ function findWindowsArm64InstallerAsset(release) {
   }) || null;
 }
 
-/**
- * 이 맥에 설치할 dmg (CLAW-158).
- *
- * 무서명 빌드라 macOS는 electron-updater로 자동 설치를 할 수 없다(Squirrel.Mac이 교체 전에
- * 코드서명을 검증한다). 그래서 브라우저로 내보내는데, 릴리스 **페이지**를 열면 사용자가
- * arm64/x64를 직접 골라야 한다. 이 기기에 맞는 파일 URL을 바로 열어 그 단계를 없앤다.
- *
- * `.zip`은 Squirrel.Mac 자동 업데이트용이라 고르지 않는다 — 사람이 열 대상은 dmg다.
- * Rosetta로 도는 x64 빌드에는 arm64를 권한다. 네이티브가 빠르고, Windows ARM64 경로
- * (`shouldPromptNativeArm64`)가 이미 같은 판단을 한다.
- */
-function findMacInstallerAsset(release, { arch, runningUnderARM64Translation } = {}) {
-  const assets = release && Array.isArray(release.assets) ? release.assets : [];
-  const wantArm64 = arch === "arm64" || !!runningUnderARM64Translation;
-  const pick = (wanted) => assets.find((asset) => {
-    const name = String(asset && asset.name || "");
-    return new RegExp(`-${wanted}\\.dmg$`, "i").test(name) && asset.browser_download_url;
-  }) || null;
-  // 원하는 아키텍처가 없으면 반대쪽이라도 준다 — Rosetta·에뮬레이션으로 열리기는 한다.
-  return pick(wantArm64 ? "arm64" : "x64") || pick(wantArm64 ? "x64" : "arm64");
-}
+// 갱신을 clawad에 맡기는 경로 (CLAW-160, 계약 §3.5).
+const { resolveSiblingCommand } = require("./clawad-cli-bridge");
+
+const OVERLAY_UPDATE_SCRIPT = "overlay-update.js";
 
 function initUpdater(ctx, deps = {}) {
   const app = deps.app || electron.app;
@@ -1057,6 +1040,44 @@ function initUpdater(ctx, deps = {}) {
     return schedulerRunning;
   }
 
+  /**
+   * clawad에 갱신을 맡긴다. 완료를 기다리지 않는다 — 우리가 꺼져야 저쪽이 교체를 시작한다.
+   * 계약 §3.3의 검사를 통과한 포인터에서만 스크립트를 끌어낸다(임의 경로 실행 금지).
+   */
+  function startOverlayUpdate() {
+    let command;
+    try {
+      command = resolveSiblingCommand(OVERLAY_UPDATE_SCRIPT, {
+        dataDir: deps.clawadDataDir,
+        env: deps.env || process.env,
+      });
+    } catch (err) {
+      return { status: "failed", message: getErrorMessage(err) };
+    }
+    if (!command) return { status: "unavailable" };
+    try {
+      const spawn = deps.spawnImpl || require("child_process").spawn;
+      const child = spawn(command.node, [command.script], {
+        stdio: "ignore",
+        windowsHide: true,
+        // 우리가 죽어도 살아남아야 교체를 끝낼 수 있다.
+        detached: true,
+      });
+      child.on("error", () => {});
+      child.unref();
+      return { status: "started" };
+    } catch (err) {
+      return { status: "failed", message: getErrorMessage(err) };
+    }
+  }
+
+  /** 교체를 시작할 수 있도록 스스로 종료한다. 정리(서피스 락 해제 등)는 기존 quit 경로가 한다. */
+  function quitForUpdate() {
+    if (typeof deps.quitImpl === "function") return deps.quitImpl();
+    try { app.quit(); } catch { /* 종료 실패해도 clawad가 한도까지 기다린 뒤 포기한다 */ }
+    return undefined;
+  }
+
   function setupAutoUpdater() {
     if (isRunningX64OnWindowsArm64()) {
       Promise.resolve()
@@ -1086,35 +1107,33 @@ function initUpdater(ctx, deps = {}) {
 
       const onPrimary = async () => {
         if (isMac) {
-          // 이 기기에 맞는 dmg를 바로 연다. 자산을 못 찾으면(릴리스 조회 실패·자산 누락)
-          // 예전처럼 릴리스 페이지로 보낸다 — 고르는 수고가 남을 뿐 막히지는 않는다.
-          let target = RELEASES_LATEST_URL;
-          let picked = false;
-          try {
-            const asset = findMacInstallerAsset(await fetchLatestRelease(), {
-              arch: runtimeArch,
-              runningUnderARM64Translation: deps.runningUnderARM64Translation != null
-                ? deps.runningUnderARM64Translation
-                : app.runningUnderARM64Translation,
-            });
-            if (asset && asset.browser_download_url) {
-              target = asset.browser_download_url;
-              picked = true;
-            } else {
-              log("macOS installer asset not found in latest release; opening releases page");
-            }
-          } catch (err) {
-            log(`macOS installer asset lookup failed: ${getErrorMessage(err)}; opening releases page`);
+          // 무서명 빌드는 브라우저로 받으면 macOS가 com.apple.quarantine을 붙이고 Gatekeeper가
+          // 실행을 막는다. clawad가 Node로 받아 ditto로 풀면 애초에 붙지 않는다 (계약 §3.5).
+          // 실행 중인 앱이 자기를 교체하는 문제도 함께 피한다 — 교체 주체가 밖에 있으면
+          // 실패해도 구 버전을 되돌릴 수 있다.
+          const delegated = startOverlayUpdate();
+          if (delegated.status === "started") {
+            updateStatus = "idle";
+            clearActiveCheck();
+            rebuildMenus();
+            await showInfoBubble(
+              "downloading",
+              t("updateDownloading", "Downloading Update..."),
+              t("macUpdateDelegated", "Claw-Ad will quit and update itself. It reopens when done.")
+            );
+            // clawad가 종료를 기다렸다가 교체한다. 우리가 꺼져야 그 절차가 시작된다.
+            quitForUpdate();
+            return;
           }
-          shell.openExternal(target);
+          // clawad가 없으면(CLI 미설치·트리거 없음) 예전처럼 릴리스 페이지로 보낸다.
+          log(`overlay update delegation unavailable (${delegated.status}); opening releases page`);
+          shell.openExternal(RELEASES_LATEST_URL);
           updateStatus = "idle";
           clearActiveCheck();
           rebuildMenus();
           await showSuccessBubble({
             title: t("updateReady", "Update Ready"),
-            message: picked
-              ? t("macUpdateDownloadStarted", "Started downloading the installer for this Mac.")
-              : t("macUpdateOpened", "Opened the latest download page in your browser."),
+            message: t("macUpdateOpened", "Opened the latest download page in your browser."),
             version: info.version,
             actions: [
               { id: "dismiss", label: t("dismiss", "Dismiss"), variant: "secondary" },
@@ -1382,6 +1401,8 @@ function initUpdater(ctx, deps = {}) {
   return {
     setupAutoUpdater,
     checkForUpdates,
+    // CLAW-160: 갱신을 clawad에 넘기는 경로. 분리 실행 여부가 핵심이라 테스트에서 직접 확인한다.
+    startOverlayUpdate,
     getUpdateMenuItem,
     getUpdateMenuLabel,
     // ── #329 scheduler hooks (Phase 2+3) ──
@@ -1400,7 +1421,6 @@ module.exports = initUpdater;
 module.exports.__test = {
   DEPENDENCY_INSTALL_TIMEOUT_MS,
   compareVersions,
-  findMacInstallerAsset,
   findWindowsArm64InstallerAsset,
   formatVersionForMessage,
   isUpdate404Error,
