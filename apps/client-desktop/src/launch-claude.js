@@ -9,7 +9,7 @@ const {
   quoteForCmd,
   quoteForPosixShellArg,
   escapeAppleScriptString,
-} = require("./remote-ssh-quote");
+} = require("./shell-quote");
 
 const SAFE_CLAUDE_SESSION_ID = /^[A-Za-z0-9_-]+$/;
 
@@ -20,8 +20,8 @@ const SAFE_CLAUDE_SESSION_ID = /^[A-Za-z0-9_-]+$/;
 // no `$`, backtick, `;`, `&`, `()` or `$()` interpolation happens. That means a
 // user-supplied sessionId can't break out of the string or inject commands.
 // The result must be embedded inside a `& <quoted> <quoted> ...` invocation by
-// the caller. We keep this local rather than in remote-ssh-quote.js because no
-// remote-ssh code path uses PowerShell.
+// the caller. We keep this local rather than in shell-quote.js because no other
+// code path uses PowerShell.
 function quoteForPowerShell(arg) {
   if (typeof arg !== "string") {
     throw new TypeError("quoteForPowerShell: arg must be a string");
@@ -61,8 +61,7 @@ function normalizeClaudeSessionId(sessionId) {
 // the *terminal* launched — the terminal is detached with stdio ignored, so we
 // can't see whether `claude` inside it succeeded. Resolving claude's real path
 // up front (findClaudeCmd) is what guards the inner command; terminal-level
-// fallback is purely about terminal availability. Same contract as
-// remote-ssh-ipc's tryLaunch.
+// fallback is purely about terminal availability.
 function tryLaunch(bin, args, opts) {
   return new Promise((resolve) => {
     let child;
