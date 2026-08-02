@@ -1,5 +1,8 @@
 const { describe, it, beforeEach, mock } = require("node:test");
 const assert = require("node:assert");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
 
 let initUpdater = require("../src/updater");
 
@@ -1146,69 +1149,6 @@ describe("updater Windows ARM64 migration helpers", () => {
     assert.strictEqual(formatVersionForMessage("0.6.1"), "0.6.1");
   });
 
-  // CLAW-158: 릴리스 페이지 대신 이 기기에 맞는 dmg를 바로 연다.
-  it("고른다: arm64 맥에는 arm64 dmg", () => {
-    const { findMacInstallerAsset } = initUpdater.__test;
-    const release = {
-      assets: [
-        { name: "Claw-Ad-0.1.5-x64.dmg", browser_download_url: "x64-dmg" },
-        { name: "Claw-Ad-0.1.5-arm64.zip", browser_download_url: "arm64-zip" },
-        { name: "Claw-Ad-0.1.5-arm64.dmg.blockmap", browser_download_url: "blockmap" },
-        { name: "Claw-Ad-0.1.5-arm64.dmg", browser_download_url: "arm64-dmg" },
-      ],
-    };
-
-    const asset = findMacInstallerAsset(release, { arch: "arm64" });
-
-    assert.strictEqual(asset.browser_download_url, "arm64-dmg", "zip·blockmap을 고르면 안 된다");
-  });
-
-  it("고른다: x64 맥에는 x64 dmg", () => {
-    const { findMacInstallerAsset } = initUpdater.__test;
-    const asset = findMacInstallerAsset({
-      assets: [
-        { name: "Claw-Ad-0.1.5-arm64.dmg", browser_download_url: "arm64-dmg" },
-        { name: "Claw-Ad-0.1.5-x64.dmg", browser_download_url: "x64-dmg" },
-      ],
-    }, { arch: "x64" });
-
-    assert.strictEqual(asset.browser_download_url, "x64-dmg");
-  });
-
-  it("Rosetta로 도는 x64 빌드에는 네이티브 arm64를 권한다", () => {
-    const { findMacInstallerAsset } = initUpdater.__test;
-    const asset = findMacInstallerAsset({
-      assets: [
-        { name: "Claw-Ad-0.1.5-x64.dmg", browser_download_url: "x64-dmg" },
-        { name: "Claw-Ad-0.1.5-arm64.dmg", browser_download_url: "arm64-dmg" },
-      ],
-    }, { arch: "x64", runningUnderARM64Translation: true });
-
-    assert.strictEqual(asset.browser_download_url, "arm64-dmg");
-  });
-
-  it("원하는 아키텍처가 없으면 반대쪽이라도 준다", () => {
-    const { findMacInstallerAsset } = initUpdater.__test;
-    const asset = findMacInstallerAsset({
-      assets: [{ name: "Claw-Ad-0.1.5-x64.dmg", browser_download_url: "x64-dmg" }],
-    }, { arch: "arm64" });
-
-    assert.strictEqual(asset.browser_download_url, "x64-dmg");
-  });
-
-  it("dmg가 하나도 없으면 null — 호출부가 릴리스 페이지로 되돌아간다", () => {
-    const { findMacInstallerAsset } = initUpdater.__test;
-    for (const release of [
-      null,
-      {},
-      { assets: [] },
-      { assets: [{ name: "Claw-Ad-0.1.5-arm64.zip", browser_download_url: "zip" }] },
-      { assets: [{ name: "Claw-Ad-0.1.5-arm64.dmg" }] }, // URL 없음
-    ]) {
-      assert.strictEqual(findMacInstallerAsset(release, { arch: "arm64" }), null, JSON.stringify(release));
-    }
-  });
-
   it("finds Windows ARM64 installer assets without matching blockmaps", () => {
     const { findWindowsArm64InstallerAsset } = initUpdater.__test;
     const asset = findWindowsArm64InstallerAsset({
@@ -1604,5 +1544,60 @@ describe("updater #329 background scheduler", () => {
     assert.strictEqual(second.status, "new-update");
     assert.strictEqual(second.version, "v0.9.0");
     assert.strictEqual(requestHeaders[1]["If-None-Match"], '"abc123"');
+  });
+});
+
+describe("updater 오버레이 갱신 위임 (CLAW-160)", () => {
+  // CLAW-160: 브라우저로 받으면 격리 속성이 붙어 Gatekeeper가 막는다. clawad에 넘긴다.
+  function stageClawadInstall() {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "clawad-bridge-"));
+    const dataDir = path.join(root, "data");
+    const clientDir = path.join(root, "client");
+    fs.mkdirSync(dataDir, { recursive: true });
+    fs.mkdirSync(clientDir, { recursive: true });
+    const node = path.join(root, "node");
+    fs.writeFileSync(node, "#!/bin/sh\n");
+    fs.writeFileSync(path.join(clientDir, "overlay-update.js"), "// stub\n");
+    fs.writeFileSync(path.join(dataDir, "overlay-trigger.json"), JSON.stringify({
+      version: 1,
+      node,
+      script: path.join(clientDir, "overlay-events.js"),
+      args: ["collect"],
+    }));
+    return { root, dataDir, node, script: path.join(clientDir, "overlay-update.js") };
+  }
+
+  it("갱신을 clawad에 넘길 때 분리 실행한다 — 우리가 꺼져도 교체가 이어져야 한다 (CLAW-160)", () => {
+    const staged = stageClawadInstall();
+    const spawned = [];
+    const updater = initUpdater(makeCtx(), makeDeps({
+      clawadDataDir: staged.dataDir,
+      spawnImpl: (file, args, options) => {
+        spawned.push({ file, args, options });
+        return { on() {}, unref() {} };
+      },
+    }));
+
+    const result = updater.startOverlayUpdate();
+
+    assert.strictEqual(result.status, "started");
+    assert.strictEqual(spawned.length, 1);
+    assert.strictEqual(spawned[0].file, staged.node);
+    assert.deepStrictEqual(spawned[0].args, [staged.script]);
+    assert.strictEqual(spawned[0].options.detached, true, "분리 실행이 아니면 우리가 꺼질 때 함께 죽는다");
+    fs.rmSync(staged.root, { recursive: true, force: true });
+  });
+
+  it("clawad가 없으면 넘기지 않는다 — 호출부가 릴리스 페이지로 되돌아간다 (CLAW-160)", () => {
+    const empty = fs.mkdtempSync(path.join(os.tmpdir(), "clawad-bridge-empty-"));
+    let spawned = 0;
+    const updater = initUpdater(makeCtx(), makeDeps({
+      clawadDataDir: empty,
+      spawnImpl: () => { spawned += 1; return { on() {}, unref() {} }; },
+    }));
+
+    assert.strictEqual(updater.startOverlayUpdate().status, "unavailable");
+    assert.strictEqual(spawned, 0);
+    fs.rmSync(empty, { recursive: true, force: true });
   });
 });
