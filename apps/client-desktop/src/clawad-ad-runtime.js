@@ -109,7 +109,12 @@ function readRewardSummary(dataDir) {
   if (!summary || summary.version !== REWARD_SUMMARY_VERSION) return null;
   // 0은 정상값이다(적립 전). positiveInt를 쓰면 갓 시작한 사용자에게만 표시가 사라진다.
   if (!nonNegativeInt(summary.verifyingPoints) || !nonNegativeInt(summary.confirmedPoints)) return null;
-  return { verifying: summary.verifyingPoints, confirmed: summary.confirmedPoints };
+  const value = { verifying: summary.verifyingPoints, confirmed: summary.confirmedPoints };
+  // 캐리까지 담은 적립 총액(1/10 포인트 단위). **선택 항목이다** — adGapMs·staleActiveMs와 같은
+  // 이유로, 이 값을 쓰기 시작한 CLI가 아직 안 깔린 조합에서는 없다. 없으면 정수 표시로 돌아간다.
+  // 오버레이는 단가를 모르므로 이 값을 계산하지 않는다 (CLAW-157, 규칙 §2).
+  if (nonNegativeInt(summary.accruedPointsTenths)) value.accruedTenths = summary.accruedPointsTenths;
+  return value;
 }
 
 /**
