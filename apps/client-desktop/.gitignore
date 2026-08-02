@@ -67,6 +67,7 @@ docs/**
 !docs/releases/release-v0.1.4.md
 !docs/releases/release-v0.1.5.md
 !docs/releases/release-v0.1.6.md
+!docs/releases/release-v0.1.7.md
 
 # Temp files from testing
 .tmp_*
@@ -117,6 +118,7 @@ scripts/*
 !scripts/export-app-icons.js
 !scripts/verify-electron-install.js
 !scripts/build-overlay-manifest.js
+!scripts/collect-asar.js
 !scripts/verify-signature.js
 
 # oh-my-cursor state

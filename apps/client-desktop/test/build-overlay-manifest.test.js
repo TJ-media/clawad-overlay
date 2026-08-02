@@ -158,3 +158,51 @@ test("버전이 다른 파일은 줍지 않는다", () => {
   assert.deepStrictEqual(Object.keys(manifest.artifacts), ["darwin-arm64"]);
   assert.strictEqual(manifest.artifacts["darwin-arm64"].bytes, Buffer.byteLength("mac arm payload"));
 });
+
+// ── 경량 업데이트 (CLAW-161) ──────────────────────────────────────────
+// app.asar만 갈아 123MB를 6.8MB로 줄인다. 잘못 판단하면 다른 Electron 위에 우리 코드가
+// 얹혀 앱이 안 켜지므로, 판정에 쓰는 runtimeId가 정확히 무엇으로 정해지는지 못 박는다.
+
+const ASAR_ARM = `app-${VERSION}-arm64.asar`;
+const ASAR_X64 = `app-${VERSION}-x64.asar`;
+
+test("asar가 있으면 codeUpdate에 아키텍처별로 담는다 (CLAW-161)", () => {
+  const dist = withDist({
+    [MAC_ARM]: "mac-arm", [MAC_X64]: "mac-x64",
+    [ASAR_ARM]: "asar-arm-bytes", [ASAR_X64]: "asar-x64-bytes",
+  });
+
+  assert.strictEqual(run(dist).status, 0);
+  const manifest = readManifest(dist);
+
+  assert.deepStrictEqual(Object.keys(manifest.codeUpdate).sort(), ["darwin-arm64", "darwin-x64"]);
+  const arm = manifest.codeUpdate["darwin-arm64"];
+  assert.match(arm.url, new RegExp(`/releases/download/v${VERSION}/${ASAR_ARM}$`));
+  assert.strictEqual(arm.bytes, Buffer.byteLength("asar-arm-bytes"));
+  assert.strictEqual(arm.sha256, crypto.createHash("sha256").update("asar-arm-bytes").digest("hex"));
+  // 아키텍처별로 따로 담는다 — 같다고 가정하지 않는다.
+  assert.notStrictEqual(arm.sha256, manifest.codeUpdate["darwin-x64"].sha256);
+});
+
+test("asar가 없으면 codeUpdate를 넣지 않는다 — 구 CLI는 전체 교체만 한다 (CLAW-161)", () => {
+  const dist = withDist({ [MAC_ARM]: "mac-arm", [MAC_X64]: "mac-x64" });
+
+  assert.strictEqual(run(dist).status, 0);
+  const manifest = readManifest(dist);
+
+  assert.ok(!("codeUpdate" in manifest), "선택 항목이라 없으면 아예 빼야 한다");
+  assert.ok(manifest.runtimeId, "runtimeId는 asar 유무와 무관하게 항상 담는다");
+});
+
+test("runtimeId는 Electron 버전과 의존성으로만 정해진다 (CLAW-161)", () => {
+  const dist = withDist({ [MAC_ARM]: "mac-arm" });
+  assert.strictEqual(run(dist).status, 0);
+  const first = readManifest(dist).runtimeId;
+
+  // 같은 package.json이면 몇 번을 돌려도 같아야 한다 — 설치 시 기록한 값과 대조하기 때문이다.
+  const again = withDist({ [MAC_ARM]: "mac-arm", [MAC_X64]: "mac-x64" });
+  assert.strictEqual(run(again).status, 0);
+  assert.strictEqual(readManifest(again).runtimeId, first, "산출물 구성이 달라도 runtimeId는 같다");
+
+  assert.match(first, /^[a-f0-9]{64}$/);
+});

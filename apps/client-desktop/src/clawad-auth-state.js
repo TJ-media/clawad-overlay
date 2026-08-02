@@ -15,10 +15,8 @@ const fs = require("fs");
 const path = require("path");
 
 const { clawadDataDir } = require("./clawad-surface-lock");
+const { resolveSiblingCommand } = require("./clawad-cli-bridge");
 
-// 트리거 파일이 가리키는 스크립트 파일명. 이 이름이 아니면 실행하지 않는다 —
-// 임의 경로를 그대로 실행하지 않기 위한 검사이며 계약 §3.3에 명시돼 있다.
-const TRIGGER_SCRIPT_NAME = "overlay-events.js";
 const LOGIN_SCRIPT_NAME = "login.js";
 
 // 로그인으로 해결되는 상태. 그 외(네트워크·서버 장애)는 일시적이므로 안내하지 않는다.
@@ -75,15 +73,7 @@ function readAuthState(options = {}) {
  * "임의 경로를 그대로 실행하지 않는다"를 지킨다.
  */
 function resolveLoginCommand(options = {}) {
-  const dataDir = options.dataDir || clawadDataDir(options.env || process.env);
-  const pointer = readJsonFile(path.join(dataDir, "overlay-trigger.json"));
-  if (!pointer || pointer.version !== 1) return null;
-  if (typeof pointer.node !== "string" || typeof pointer.script !== "string") return null;
-  if (path.basename(pointer.script) !== TRIGGER_SCRIPT_NAME) return null;
-
-  const script = path.join(path.dirname(pointer.script), LOGIN_SCRIPT_NAME);
-  if (!fs.existsSync(pointer.node) || !fs.existsSync(script)) return null;
-  return { node: pointer.node, script };
+  return resolveSiblingCommand(LOGIN_SCRIPT_NAME, options);
 }
 
 /**
