@@ -1146,6 +1146,69 @@ describe("updater Windows ARM64 migration helpers", () => {
     assert.strictEqual(formatVersionForMessage("0.6.1"), "0.6.1");
   });
 
+  // CLAW-158: 릴리스 페이지 대신 이 기기에 맞는 dmg를 바로 연다.
+  it("고른다: arm64 맥에는 arm64 dmg", () => {
+    const { findMacInstallerAsset } = initUpdater.__test;
+    const release = {
+      assets: [
+        { name: "Claw-Ad-0.1.5-x64.dmg", browser_download_url: "x64-dmg" },
+        { name: "Claw-Ad-0.1.5-arm64.zip", browser_download_url: "arm64-zip" },
+        { name: "Claw-Ad-0.1.5-arm64.dmg.blockmap", browser_download_url: "blockmap" },
+        { name: "Claw-Ad-0.1.5-arm64.dmg", browser_download_url: "arm64-dmg" },
+      ],
+    };
+
+    const asset = findMacInstallerAsset(release, { arch: "arm64" });
+
+    assert.strictEqual(asset.browser_download_url, "arm64-dmg", "zip·blockmap을 고르면 안 된다");
+  });
+
+  it("고른다: x64 맥에는 x64 dmg", () => {
+    const { findMacInstallerAsset } = initUpdater.__test;
+    const asset = findMacInstallerAsset({
+      assets: [
+        { name: "Claw-Ad-0.1.5-arm64.dmg", browser_download_url: "arm64-dmg" },
+        { name: "Claw-Ad-0.1.5-x64.dmg", browser_download_url: "x64-dmg" },
+      ],
+    }, { arch: "x64" });
+
+    assert.strictEqual(asset.browser_download_url, "x64-dmg");
+  });
+
+  it("Rosetta로 도는 x64 빌드에는 네이티브 arm64를 권한다", () => {
+    const { findMacInstallerAsset } = initUpdater.__test;
+    const asset = findMacInstallerAsset({
+      assets: [
+        { name: "Claw-Ad-0.1.5-x64.dmg", browser_download_url: "x64-dmg" },
+        { name: "Claw-Ad-0.1.5-arm64.dmg", browser_download_url: "arm64-dmg" },
+      ],
+    }, { arch: "x64", runningUnderARM64Translation: true });
+
+    assert.strictEqual(asset.browser_download_url, "arm64-dmg");
+  });
+
+  it("원하는 아키텍처가 없으면 반대쪽이라도 준다", () => {
+    const { findMacInstallerAsset } = initUpdater.__test;
+    const asset = findMacInstallerAsset({
+      assets: [{ name: "Claw-Ad-0.1.5-x64.dmg", browser_download_url: "x64-dmg" }],
+    }, { arch: "arm64" });
+
+    assert.strictEqual(asset.browser_download_url, "x64-dmg");
+  });
+
+  it("dmg가 하나도 없으면 null — 호출부가 릴리스 페이지로 되돌아간다", () => {
+    const { findMacInstallerAsset } = initUpdater.__test;
+    for (const release of [
+      null,
+      {},
+      { assets: [] },
+      { assets: [{ name: "Claw-Ad-0.1.5-arm64.zip", browser_download_url: "zip" }] },
+      { assets: [{ name: "Claw-Ad-0.1.5-arm64.dmg" }] }, // URL 없음
+    ]) {
+      assert.strictEqual(findMacInstallerAsset(release, { arch: "arm64" }), null, JSON.stringify(release));
+    }
+  });
+
   it("finds Windows ARM64 installer assets without matching blockmaps", () => {
     const { findWindowsArm64InstallerAsset } = initUpdater.__test;
     const asset = findWindowsArm64InstallerAsset({
