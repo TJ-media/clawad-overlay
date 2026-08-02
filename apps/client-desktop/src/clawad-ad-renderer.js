@@ -16,13 +16,25 @@
   // 애니메이션이 끝나면 화면에는 항상 서버 값이 정확히 그대로 남는다 (CLAUDE.md §2 [CRITICAL]).
   // 적립 판정·금액은 전부 서버가 하고, 여기서 지나가는 소수점은 화면에만 있는 중간 프레임이다.
   // 부동소수 오차로 407.9999가 남지 않게 내부는 1/10 단위 정수로만 센다.
-  const TWEEN_TICK_MS = 100;
-  const TENTHS_PER_STEP = 1;
-  /** 이 폭을 넘는 변화는 굴리지 않고 바로 맞춘다 — 첫 표시나 밀린 sync를 몇 분씩 기어오르지 않게. */
-  const TWEEN_MAX_TENTHS = 10;
+  //
+  // 페이싱은 **직전 갱신 간격에 맞춰 편다.** 예전에는 0.1을 100ms마다 몰아 굴리고 다음 갱신까지
+  // 멈춰 있었다 — 노출 주기가 18초쯤이라 0.3초 움직이고 17초 정지하는 꼴이었다. 갱신 간격을
+  // 재서 그 시간에 걸쳐 굴리면 거의 항상 움직인다. sync 주기를 상수로 박지 않으므로 주기가
+  // 바뀌어도 따라간다 (CLAW-157).
+  // 눈에 보이는 갱신 간격. 이 주기로 화면을 고치고, **한 번에 올릴 양을 거리에 맞춰 조절해**
+  // 아무리 먼 거리도 span 안에 끝나게 한다. 거리로 상한을 두면(예전 방식) 밀린 sync가 통째로
+  // 스냅돼 굴러가는 표시가 사라지고, 상한만 풀면 100P 점프가 100초씩 기어오른다.
+  const TWEEN_STEP_MS = 200;
+  /** 굴리는 데 쓸 시간의 하한·상한. 직전 갱신 간격을 이 범위로 자른다. */
+  const TWEEN_MIN_SPAN_MS = 1000;
+  const TWEEN_MAX_SPAN_MS = 240000;
+  /** 갱신 간격을 아직 모를 때(첫 변화) 쓰는 기본 시간. */
+  const TWEEN_DEFAULT_SPAN_MS = 6000;
   let shownTenths = null;
   let targetTenths = null;
   let tweenTimer = null;
+  let lastTargetAt = null;
+  let lastSpanMs = TWEEN_DEFAULT_SPAN_MS;
 
   function stopTween() {
     if (tweenTimer === null) return;
@@ -37,12 +49,19 @@
       : (tenths / 10).toFixed(1);
   }
 
-  function paintReward(confirmed) {
+  /**
+   * `accrued`가 true면 굴러가는 값이 확정분을 **포함한** 적립 총액이다. 그때는 확정을 괄호로
+   * 묶어 두 수를 더하는 것으로 읽히지 않게 한다 — `예상 33.6P · 확정 33P`는 66.6P로 오독될
+   * 수 있다. 구 CLI(총액 없음)에서는 두 값이 서로 배타적이라 기존 표기를 유지한다.
+   */
+  function paintReward(confirmed, accrued) {
     if (shownTenths === null) {
       reward.textContent = "";
       return;
     }
-    reward.textContent = `예상 ${formatTenths(shownTenths)}P · 확정 ${confirmed.toLocaleString("ko-KR")}P`;
+    const shown = formatTenths(shownTenths);
+    const done = confirmed.toLocaleString("ko-KR");
+    reward.textContent = accrued ? `예상 ${shown}P (확정 ${done}P)` : `예상 ${shown}P · 확정 ${done}P`;
   }
 
   /**
@@ -54,25 +73,69 @@
       stopTween();
       shownTenths = null;
       targetTenths = null;
+      lastTargetAt = null;
       reward.textContent = "";
       return;
     }
     const confirmed = value.confirmed;
-    targetTenths = value.verifying * 10;
-    // 첫 표시, 감소(정산으로 확정에 넘어간 경우), 큰 점프는 굴리지 않고 바로 맞춘다.
-    if (shownTenths === null || targetTenths < shownTenths || targetTenths - shownTenths > TWEEN_MAX_TENTHS) {
+    // 캐리까지 담은 적립 총액이 있으면 그걸 굴린다. 없으면(구 CLI) 예전대로 검증 중 값을 쓴다.
+    // 어느 쪽이든 **서버가 준 값**이다 — 렌더러는 두 서버 값 사이를 지나갈 뿐이다.
+    const accrued = Number.isInteger(value.accruedTenths);
+    const next = accrued ? value.accruedTenths : value.verifying * 10;
+
+    if (next !== targetTenths) {
+      const now = Date.now();
+      if (lastTargetAt !== null) lastSpanMs = now - lastTargetAt;
+      lastTargetAt = now;
+      targetTenths = next;
+      // 새 목표가 오면 페이싱을 다시 잡는다. 옛 간격으로 굴리던 타이머를 그대로 두면
+      // 빨리 끝내고 멈춰 서서, 고치려던 "굴렀다가 정지" 패턴이 그대로 남는다.
+      stopTween();
+    }
+
+    // 첫 표시와 감소(교환·회수)는 굴리지 않고 바로 맞춘다. 거꾸로 굴리지 않는다.
+    if (shownTenths === null || targetTenths < shownTenths) {
       stopTween();
       shownTenths = targetTenths;
-      paintReward(confirmed);
+      paintReward(confirmed, accrued);
       return;
     }
-    paintReward(confirmed);
+    paintReward(confirmed, accrued);
     if (shownTenths === targetTenths || tweenTimer !== null) return;
+    // 남은 거리를 직전 갱신 간격에 걸쳐 나눈다. 다음 갱신 전에 끝나도록 살짝 짧게 잡는다.
+    const span = Math.min(TWEEN_MAX_SPAN_MS, Math.max(TWEEN_MIN_SPAN_MS, Math.floor(lastSpanMs * 0.9)));
+    const perStep = Math.max(1, Math.ceil((targetTenths - shownTenths) / Math.ceil(span / TWEEN_STEP_MS)));
     tweenTimer = setInterval(() => {
-      shownTenths = Math.min(shownTenths + TENTHS_PER_STEP, targetTenths);
-      paintReward(confirmed);
+      shownTenths = Math.min(shownTenths + perStep, targetTenths);
+      paintReward(confirmed, accrued);
       if (shownTenths >= targetTenths) stopTween();
-    }, TWEEN_TICK_MS);
+    }, TWEEN_STEP_MS);
+  }
+
+  /**
+   * 내용에 맞는 자연 폭(CSS px). 창이 곧 패널이라 짧은 광고에도 창이 최대 폭으로 뜨던 것을
+   * 줄이기 위해 잰다 (CLAW-156).
+   *
+   * `#text`는 `flex: 1 1 auto`라 늘어나므로 `scrollWidth`로는 자연 폭이 나오지 않는다. 잠깐
+   * 늘어나지 않게 바꾸고 `max-content`로 재는데, **읽고 바로 되돌리므로 화면에 반영되지
+   * 않는다** — 같은 프레임 안에서 레이아웃만 계산되고 그 상태로 페인트되지 않는다.
+   * 세로는 그대로다: 행 수가 고정이라 높이는 메인의 STRIP_HEIGHT가 계속 맞다.
+   */
+  function measureNaturalWidth() {
+    const textFlex = text.style.flex;
+    const stripWidth = strip.style.width;
+    text.style.flex = "0 0 auto";
+    strip.style.width = "max-content";
+    const measured = Math.ceil(strip.getBoundingClientRect().width);
+    strip.style.width = stripWidth;
+    text.style.flex = textFlex;
+    return measured;
+  }
+
+  function reportWidth() {
+    if (!window.clawadAdAPI || typeof window.clawadAdAPI.reportWidth !== "function") return;
+    const width = measureNaturalWidth();
+    if (Number.isFinite(width) && width > 0) window.clawadAdAPI.reportWidth(width);
   }
 
   function render(ad) {
@@ -94,6 +157,8 @@
     linked = ad.linked === true;
     strip.classList.toggle("linked", linked);
     strip.classList.add("visible");
+    // 클래스까지 다 붙인 뒤에 잰다 — notice/linked가 [광고]↔[안내] 표기와 밑줄을 바꿔 폭이 달라진다.
+    reportWidth();
   }
 
   // 클릭은 "지금 표시 중인 광고를 열어달라"는 신호만 보낸다. URL은 메인이 갖고 있다.

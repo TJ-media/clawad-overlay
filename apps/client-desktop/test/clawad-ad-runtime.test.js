@@ -487,6 +487,28 @@ test("적립 현황은 서버가 내려준 정수를 그대로 payload에 싣는
   assert.deepStrictEqual(ad.reward, { verifying: 12, confirmed: 407 });
 });
 
+test("캐리까지 담은 적립 총액을 payload에 함께 싣는다 (CLAW-157)", () => {
+  const data = writeReward(makeData(), {
+    version: 1, verifyingPoints: 0, confirmedPoints: 33, accruedPointsTenths: 336, fetchedAt: Date.now(),
+  });
+
+  const ad = runtimeWithRecorder(data).runtime.tick(Date.now());
+
+  assert.deepStrictEqual(ad.reward, { verifying: 0, confirmed: 33, accruedTenths: 336 });
+});
+
+test("적립 총액이 없거나 형식이 틀리면 싣지 않는다 — 구 CLI 호환 (CLAW-157)", () => {
+  for (const bad of [undefined, -1, 33.6, "336", null]) {
+    const summary = { version: 1, verifyingPoints: 0, confirmedPoints: 33, fetchedAt: Date.now() };
+    if (bad !== undefined) summary.accruedPointsTenths = bad;
+    const data = writeReward(makeData(), summary);
+
+    const ad = runtimeWithRecorder(data).runtime.tick(Date.now());
+
+    assert.deepStrictEqual(ad.reward, { verifying: 0, confirmed: 33 }, `거절해야 한다: ${JSON.stringify(bad)}`);
+  }
+});
+
 test("적립이 0이어도 표시한다 — 갓 시작한 사용자에게만 2행이 사라지면 안 된다", () => {
   const data = writeReward(makeData(), { version: 1, verifyingPoints: 0, confirmedPoints: 0, fetchedAt: Date.now() });
 
