@@ -112,6 +112,32 @@
     }, TWEEN_STEP_MS);
   }
 
+  /**
+   * 내용에 맞는 자연 폭(CSS px). 창이 곧 패널이라 짧은 광고에도 창이 최대 폭으로 뜨던 것을
+   * 줄이기 위해 잰다 (CLAW-156).
+   *
+   * `#text`는 `flex: 1 1 auto`라 늘어나므로 `scrollWidth`로는 자연 폭이 나오지 않는다. 잠깐
+   * 늘어나지 않게 바꾸고 `max-content`로 재는데, **읽고 바로 되돌리므로 화면에 반영되지
+   * 않는다** — 같은 프레임 안에서 레이아웃만 계산되고 그 상태로 페인트되지 않는다.
+   * 세로는 그대로다: 행 수가 고정이라 높이는 메인의 STRIP_HEIGHT가 계속 맞다.
+   */
+  function measureNaturalWidth() {
+    const textFlex = text.style.flex;
+    const stripWidth = strip.style.width;
+    text.style.flex = "0 0 auto";
+    strip.style.width = "max-content";
+    const measured = Math.ceil(strip.getBoundingClientRect().width);
+    strip.style.width = stripWidth;
+    text.style.flex = textFlex;
+    return measured;
+  }
+
+  function reportWidth() {
+    if (!window.clawadAdAPI || typeof window.clawadAdAPI.reportWidth !== "function") return;
+    const width = measureNaturalWidth();
+    if (Number.isFinite(width) && width > 0) window.clawadAdAPI.reportWidth(width);
+  }
+
   function render(ad) {
     if (!ad || typeof ad.text !== "string" || ad.text.length === 0) {
       strip.classList.remove("visible", "linked", "notice");
@@ -131,6 +157,8 @@
     linked = ad.linked === true;
     strip.classList.toggle("linked", linked);
     strip.classList.add("visible");
+    // 클래스까지 다 붙인 뒤에 잰다 — notice/linked가 [광고]↔[안내] 표기와 밑줄을 바꿔 폭이 달라진다.
+    reportWidth();
   }
 
   // 클릭은 "지금 표시 중인 광고를 열어달라"는 신호만 보낸다. URL은 메인이 갖고 있다.

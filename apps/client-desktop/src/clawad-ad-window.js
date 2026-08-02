@@ -14,6 +14,8 @@ const clawadAuthState = require("./clawad-auth-state");
 const { ADS_EXHAUSTED_NOTICE, LOGIN_NOTICE, rotatingNotice } = require("./clawad-ad-notices");
 const clawadSurfaceLock = require("./clawad-surface-lock");
 const { keepOutOfTaskbar } = require("./taskbar");
+// 폭 결정은 순수 함수로 분리해 Electron 없이 검증한다 (CLAW-156).
+const { clampWidth, shouldAdopt } = require("./clawad-ad-width");
 
 const isMac = process.platform === "darwin";
 const isWin = process.platform === "win32";
@@ -52,6 +54,8 @@ module.exports = function initClawadAdWindow(ctx) {
   let lastBounds = null;
   let lastClickable = null;
   let ipcBound = false;
+  /** 렌더러가 마지막으로 알려준 내용 자연 폭(CSS px). 없으면 정책 상한을 그대로 쓴다. */
+  let contentWidthPx = null;
 
   function getScale() {
     return typeof ctx.getTextScale === "function" ? ctx.getTextScale() : 1;
@@ -61,7 +65,7 @@ module.exports = function initClawadAdWindow(ctx) {
     const petBounds = typeof ctx.getPetWindowBounds === "function" ? ctx.getPetWindowBounds() : null;
     if (!petBounds) return null;
     const scale = getScale();
-    const width = scaled(Math.min(maxWidthPx, 720), scale);
+    const width = scaled(clampWidth(contentWidthPx, maxWidthPx), scale);
     const height = scaled(STRIP_HEIGHT, scale);
     const centerX = petBounds.x + Math.round(petBounds.width / 2);
     const centerY = petBounds.y + Math.round(petBounds.height / 2);
@@ -318,6 +322,16 @@ module.exports = function initClawadAdWindow(ctx) {
         if (!adWindow || adWindow.isDestroyed()) return;
         if (event.sender !== adWindow.webContents) return;
         openCurrentAd();
+      });
+      // 렌더러가 잰 내용 폭. 창이 곧 패널이라 짧은 광고에 창을 좁혀 준다 (CLAW-156).
+      ipcMain.on("clawad-ad:width", (event, px) => {
+        if (!adWindow || adWindow.isDestroyed()) return;
+        if (event.sender !== adWindow.webContents) return;
+        if (!Number.isFinite(px) || px <= 0) return;
+        const next = Math.ceil(px);
+        if (!shouldAdopt(next, contentWidthPx)) return;
+        contentWidthPx = next;
+        if (lastPayload) applyBounds(adWindow, lastPayload.maxWidthPx);
       });
       ipcBound = true;
     }
