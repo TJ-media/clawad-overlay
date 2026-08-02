@@ -48,16 +48,19 @@ test("첫 표시는 굴리지 않고 서버 값을 바로 보여준다", (t) => 
   assert.strictEqual(reward.textContent, "예상 407P · 확정 2,000P");
 });
 
+// 페이싱이 직전 갱신 간격을 따라가므로(CLAW-157) Date도 함께 목킹해 간격을 통제한다.
+// 통제하지 않으면 두 render가 같은 ms에 일어나 하한(1s)이 걸리고 한 번에 여러 칸이 오른다.
 test("1 오르면 0.1씩 굴러 올라가고 정확히 서버 값에서 멈춘다", (t) => {
-  t.mock.timers.enable({ apis: ["setInterval"] });
+  t.mock.timers.enable({ apis: ["setInterval", "Date"] });
   const { render, reward } = mountRenderer();
   render(ad(407, 2000));
 
+  t.mock.timers.tick(6000); // 갱신 간격 6초
   render(ad(408, 2000));
 
   const seen = [];
   for (let i = 0; i < 10; i += 1) {
-    t.mock.timers.tick(100);
+    t.mock.timers.tick(200);
     seen.push(reward.textContent);
   }
 
@@ -70,22 +73,78 @@ test("1 오르면 0.1씩 굴러 올라가고 정확히 서버 값에서 멈춘�
   assert.strictEqual(seen[9], "예상 408P · 확정 2,000P");
 
   // 도달한 뒤로는 더 움직이지 않는다.
-  t.mock.timers.tick(1000);
+  t.mock.timers.tick(2000);
   assert.strictEqual(reward.textContent, "예상 408P · 확정 2,000P");
 });
 
-test("큰 점프와 감소는 굴리지 않고 바로 맞춘다", (t) => {
+// CLAW-157: 예전에는 1.0P 넘는 변화를 통째로 스냅해 굴러가는 표시가 아예 안 보였다. 이제는
+// 거리 대신 **시간**을 묶는다 — 한 번에 올리는 양을 거리에 맞춰 키워 먼 거리도 같은 시간에 끝낸다.
+test("밀린 sync가 크게 들어와도 굴리되 오래 기어오르지 않는다 (CLAW-157)", (t) => {
   t.mock.timers.enable({ apis: ["setInterval"] });
   const { render, reward } = mountRenderer();
   render(ad(407, 2000));
 
-  // 밀린 sync가 한 번에 들어오는 경우. 0.1씩 기어오르면 몇 분이 걸린다.
-  render(ad(507, 2000));
-  assert.strictEqual(reward.textContent, "예상 507P · 확정 2,000P");
+  render(ad(507, 2000)); // 100P = 1000 tenths
+  assert.notStrictEqual(reward.textContent, "예상 507P · 확정 2,000P", "즉시 스냅하지 않는다");
 
-  // 검증이 끝나 확정으로 넘어가면 예상은 줄어든다. 거꾸로 굴리지 않는다.
+  // 기본 span(6s) 안에 끝난다. 0.1씩이었다면 100초가 걸렸을 거리다.
+  t.mock.timers.tick(6000);
+  assert.strictEqual(reward.textContent, "예상 507P · 확정 2,000P");
+});
+
+test("감소는 굴리지 않고 바로 맞춘다 — 거꾸로 굴리지 않는다", (t) => {
+  t.mock.timers.enable({ apis: ["setInterval"] });
+  const { render, reward } = mountRenderer();
+  render(ad(407, 2000));
+
+  // 검증이 끝나 확정으로 넘어가면 예상은 줄어든다.
   render(ad(0, 2507));
   assert.strictEqual(reward.textContent, "예상 0P · 확정 2,507P");
+});
+
+// CLAW-157: 예전 목표값(verifying)은 서버 구조상 항상 0이라 굴러가는 표시가 한 번도 동작하지
+// 않았다. 캐리까지 담은 총액(accruedTenths)이 오면 그걸 굴린다.
+function accruedAd(accruedTenths, confirmed) {
+  return {
+    kind: "ad", text: "광고 문구", brand: "클로애드", linked: false,
+    reward: { verifying: 0, confirmed, accruedTenths },
+  };
+}
+
+test("적립 총액이 오면 그 값을 굴리고 확정을 괄호로 묶는다 (CLAW-157)", (t) => {
+  t.mock.timers.enable({ apis: ["setInterval", "Date"] });
+  const { render, reward } = mountRenderer();
+
+  render(accruedAd(333, 33));
+  // 확정을 더하는 것으로 읽히지 않게 괄호로 묶는다 — 총액이 확정을 이미 포함한다.
+  assert.strictEqual(reward.textContent, "예상 33.3P (확정 33P)");
+
+  t.mock.timers.tick(6000);
+  render(accruedAd(336, 33)); // 노출 1건 = +0.3P
+
+  t.mock.timers.tick(200);
+  assert.strictEqual(reward.textContent, "예상 33.4P (확정 33P)", "굴러 올라간다");
+  t.mock.timers.tick(6000);
+  assert.strictEqual(reward.textContent, "예상 33.6P (확정 33P)", "서버 값에서 정확히 멈춘다");
+});
+
+test("적립 총액이 없는 구 CLI에서는 기존 표기와 동작을 유지한다 (CLAW-157)", (t) => {
+  t.mock.timers.enable({ apis: ["setInterval", "Date"] });
+  const { render, reward } = mountRenderer();
+
+  render(ad(12, 34));
+  assert.strictEqual(reward.textContent, "예상 12P · 확정 34P");
+});
+
+test("적립 총액이 정수가 아니면 무시하고 검증 중 값으로 되돌아간다 (CLAW-157)", (t) => {
+  t.mock.timers.enable({ apis: ["setInterval", "Date"] });
+  const { render, reward } = mountRenderer();
+
+  render({
+    kind: "ad", text: "광고 문구", brand: "클로애드", linked: false,
+    reward: { verifying: 7, confirmed: 34, accruedTenths: 33.6 },
+  });
+  assert.strictEqual(reward.textContent, "예상 7P · 확정 34P");
 });
 
 test("적립 정보가 없으면 빈 문자열이고 굴러가던 것도 멈춘다", (t) => {
