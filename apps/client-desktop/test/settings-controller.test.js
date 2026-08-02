@@ -641,11 +641,9 @@ describe("applyCommand", () => {
   });
 
   it("serializes commands sharing a domain lockKey (cross-command race fix)", async () => {
-    // Codex review #9 high finding: remoteSsh.update / .markDeployed /
-    // .delete all write the same prefs field. Without a shared lockKey
-    // they execute concurrently — markDeployed can compute its commit
-    // from a stale snapshot taken before update committed, and stomp
-    // the user's edit. Domain lockKey forces serialization.
+    // 같은 prefs 필드를 쓰는 명령들이 공유 lockKey 없이 동시에 돌면, 뒤 명령이
+    // 앞 명령의 커밋 전 스냅샷으로 자기 커밋을 계산해 사용자의 편집을 덮어쓴다.
+    // 도메인 lockKey가 직렬화를 강제한다.
     const order = [];
     const slowFast = async (payload) => {
       order.push(`start:${payload.tag}`);

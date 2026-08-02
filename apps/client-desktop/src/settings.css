@@ -1,5 +1,4 @@
 * { box-sizing: border-box; }
-
 :root {
   --bg: #f5f5f7;
   --panel-bg: #ffffff;
@@ -42,7 +41,6 @@
     --scroll-thumb-hover: rgba(255, 255, 255, 0.2);
   }
 }
-
 html, body {
   height: 100%;
   margin: 0;
@@ -54,7 +52,6 @@ html, body {
   user-select: none;
   overflow: hidden;
 }
-
 .app {
   display: flex;
   /* 100% (zoom-aware), NOT viewport units: those resolve against the
@@ -63,7 +60,6 @@ html, body {
   height: 100%;
   width: 100%;
 }
-
 /* ── Sidebar ── */
 .sidebar {
   width: 200px;
@@ -77,7 +73,6 @@ html, body {
 .sidebar::-webkit-scrollbar-track { background: transparent; }
 .sidebar::-webkit-scrollbar-thumb { background: var(--scroll-thumb); border-radius: 3px; }
 .sidebar::-webkit-scrollbar-thumb:hover { background: var(--scroll-thumb-hover); }
-
 .sidebar-item {
   display: flex;
   align-items: center;
@@ -167,7 +162,6 @@ html, body {
 @media (prefers-color-scheme: dark) {
   .sidebar-item-soon { background: rgba(255, 255, 255, 0.08); }
 }
-
 /* ── Content panel ── */
 .content {
   flex: 1;
@@ -179,7 +173,6 @@ html, body {
 .content::-webkit-scrollbar-track { background: transparent; }
 .content::-webkit-scrollbar-thumb { background: var(--scroll-thumb); border-radius: 3px; }
 .content::-webkit-scrollbar-thumb:hover { background: var(--scroll-thumb-hover); }
-
 .content h1 {
   margin: 0 0 4px;
   font-size: 22px;
@@ -215,7 +208,6 @@ html, body {
   cursor: default;
   opacity: 0.6;
 }
-
 .section {
   margin-bottom: 28px;
 }
@@ -228,7 +220,6 @@ html, body {
   margin: 0 0 8px;
   padding: 0 4px;
 }
-
 /* ── Setting row ── */
 .row {
   display: flex;
@@ -257,7 +248,6 @@ html, body {
 @media (prefers-color-scheme: dark) {
   .section-rows { background: #1a1a1d; }
 }
-
 .agent-hint-banner {
   display: flex;
   align-items: center;
@@ -407,7 +397,6 @@ html, body {
 .collapsible-summary-wrap {
   display: contents;
 }
-
 .collapsible-group-summary {
   flex: 0 1 auto;
   display: flex;
@@ -627,7 +616,6 @@ html, body {
     transition: none;
   }
 }
-
 /* Per-agent sub-toggle (e.g. "Show permission bubbles"), rendered under
    the master agent row. Indented to show the parent/child relationship;
    smaller label to de-emphasize against the master switch. */
@@ -639,7 +627,6 @@ html, body {
   font-weight: 400;
   color: var(--text-secondary);
 }
-
 .row-text {
   flex: 1;
   min-width: 0;
@@ -667,14 +654,12 @@ html, body {
     color: #ff6b6b;
   }
 }
-
 .row-control {
   flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 8px;
 }
-
 .bubble-policy-row {
   flex-direction: column;
   align-items: stretch;
@@ -739,8 +724,6 @@ html, body {
   font-size: 11px;
   color: var(--text-secondary);
 }
-
-
 /* ── Switch (iOS-style) ── */
 .switch {
   --switch-knob-x: 0;
@@ -798,7 +781,6 @@ html, body {
     transition: none;
   }
 }
-
 /* ── Size slider (volume-style; drag/pending affordances from the preview
    session controller) ── */
 .size-control.dragging .volume-slider::-webkit-slider-thumb,
@@ -812,7 +794,6 @@ html, body {
 .text-scale-control.dragging .volume-slider {
   cursor: ew-resize;
 }
-
 /* ── Volume slider ── */
 .volume-control {
   --volume-track-height: 6px;
@@ -908,7 +889,6 @@ html, body {
     transform: none;
   }
 }
-
 /* ── Agent badges ── */
 .agent-section + .agent-section,
 .agent-custom-tools-section + .agent-section {
@@ -1269,7 +1249,6 @@ html, body {
   min-width: 72px;
   padding-inline: 8px;
 }
-
 /* ── Select (segmented) ── */
 .segmented {
   display: inline-flex;
@@ -1461,7 +1440,6 @@ html, body {
   gap: 0;
   overflow: hidden;
 }
-
 .permission-automation-row {
   flex-direction: column;
   align-items: stretch;
@@ -1506,7 +1484,6 @@ html, body {
     transition: none;
   }
 }
-
 /* ── Coming soon placeholder ── */
 .placeholder {
   display: flex;
@@ -1536,7 +1513,6 @@ html, body {
   max-width: 280px;
   line-height: 1.5;
 }
-
 /* ── Theme grid ── */
 .theme-actions {
   display: grid;
@@ -1836,7 +1812,6 @@ html, body {
   outline: 2px solid var(--toast-error);
   outline-offset: 2px;
 }
-
 /* ── Shared buttons ── */
 .soft-btn {
   border: 1px solid var(--border);
@@ -1865,7 +1840,6 @@ html, body {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
-
 /* ── Shortcuts ── */
 .shortcuts-head {
   display: flex;
@@ -1926,7 +1900,6 @@ html, body {
 .shortcut-status-recording {
   color: var(--accent);
 }
-
 /* ── Animation Overrides ── */
 .anim-override-meta {
   display: grid;
@@ -1986,7 +1959,6 @@ html, body {
 @media (prefers-color-scheme: dark) {
   .anim-idle-visual-row { background: #1a1a1d; }
 }
-
 .anim-override-list {
   display: flex;
   flex-direction: column;
@@ -2400,7 +2372,6 @@ html, body {
   justify-content: flex-end;
   gap: 8px;
 }
-
 /* ── Asset picker modal ── */
 .modal-backdrop {
   position: fixed;
@@ -3164,7 +3135,6 @@ html, body {
   flex-wrap: wrap;
   flex-shrink: 0;
 }
-
 /* ── Animation Map reset button ── */
 .anim-map-reset {
   display: flex;
@@ -3182,7 +3152,6 @@ html, body {
   background: transparent !important;
   color: var(--text-tertiary) !important;
 }
-
 /* ── Toast ── */
 .toast-stack {
   position: fixed;
@@ -3209,7 +3178,6 @@ html, body {
 }
 .toast.visible { opacity: 1; transform: translateY(0); }
 .toast.error { background: var(--toast-error); }
-
 /* ── About tab ── */
 .about-hero {
   display: flex;
@@ -3351,260 +3319,6 @@ html, body {
   min-height: 16px;
   text-align: center;
 }
-
-/* ── Remote SSH tab ── */
-.remote-ssh-section-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 12px;
-}
-.remote-ssh-section-header h2 {
-  margin: 0;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-.remote-ssh-empty {
-  padding: 20px 16px;
-  border: 1px dashed var(--border);
-  border-radius: 10px;
-  color: var(--text-secondary);
-  font-size: 13px;
-  text-align: center;
-}
-.remote-ssh-card {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px 14px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--panel-bg);
-  margin-bottom: 8px;
-  cursor: pointer;
-  transition: border-color 0.12s ease, background 0.12s ease;
-}
-.remote-ssh-card:hover { border-color: var(--accent); }
-.remote-ssh-card.selected {
-  border-color: var(--accent);
-  background: rgba(217, 119, 87, 0.06);
-}
-.remote-ssh-card-meta { min-width: 0; flex: 1; }
-.remote-ssh-card-label {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin-bottom: 2px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.remote-ssh-card-host {
-  font-size: 11px;
-  color: var(--text-secondary);
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.remote-ssh-card-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
-}
-.remote-ssh-status-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  margin-bottom: 12px;
-}
-.remote-ssh-status-message {
-  font-size: 12px;
-  color: var(--text-secondary);
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.remote-ssh-status-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 10px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 600;
-  border: 1px solid var(--border);
-  background: var(--bg);
-  color: var(--text-secondary);
-  white-space: nowrap;
-}
-.remote-ssh-status-badge::before {
-  content: "";
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
-}
-.remote-ssh-status-idle { color: var(--text-tertiary); }
-.remote-ssh-status-connecting {
-  color: #b45309;
-  background: rgba(245, 158, 11, 0.1);
-  border-color: rgba(245, 158, 11, 0.28);
-}
-.remote-ssh-status-connected {
-  color: #047857;
-  background: rgba(16, 185, 129, 0.1);
-  border-color: rgba(16, 185, 129, 0.28);
-}
-.remote-ssh-status-failed {
-  color: var(--toast-error);
-  background: rgba(185, 28, 28, 0.08);
-  border-color: rgba(185, 28, 28, 0.24);
-}
-@media (prefers-color-scheme: dark) {
-  .remote-ssh-status-connecting { color: #fbbf24; }
-  .remote-ssh-status-connected { color: #34d399; }
-  .remote-ssh-status-failed { color: #f87171; }
-}
-.remote-ssh-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-.remote-ssh-btn-danger {
-  color: var(--toast-error);
-}
-.remote-ssh-btn-danger:hover:not(:disabled) {
-  border-color: var(--toast-error);
-  background: rgba(185, 28, 28, 0.08);
-}
-.remote-ssh-progress-log {
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--bg);
-  padding: 10px 12px;
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-  font-size: 11px;
-  max-height: 200px;
-  overflow-y: auto;
-}
-.remote-ssh-progress-line {
-  padding: 2px 0;
-  color: var(--text-secondary);
-  white-space: pre-wrap;
-  word-break: break-all;
-}
-.remote-ssh-progress-line.remote-ssh-progress-ok {
-  color: var(--text-primary);
-}
-.remote-ssh-progress-line.remote-ssh-progress-fail {
-  color: var(--toast-error);
-}
-.remote-ssh-progress-line.remote-ssh-progress-start {
-  color: var(--text-tertiary);
-}
-.remote-ssh-edit {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.remote-ssh-edit h2 {
-  margin: 0;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-.remote-ssh-field {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.remote-ssh-field-label {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text-secondary);
-}
-.remote-ssh-field input[type="text"],
-.remote-ssh-field input[type="password"],
-.remote-ssh-field input[type="number"],
-.remote-ssh-field select {
-  padding: 8px 10px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--panel-bg);
-  color: var(--text-primary);
-  font-size: 13px;
-  font-family: inherit;
-}
-.remote-ssh-field input[type="text"]:focus,
-.remote-ssh-field input[type="password"]:focus,
-.remote-ssh-field input[type="number"]:focus,
-.remote-ssh-field select:focus {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-  border-color: var(--accent);
-}
-.remote-ssh-field-hint {
-  font-size: 11px;
-  color: var(--text-tertiary);
-  line-height: 1.4;
-}
-.remote-ssh-field-check label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  color: var(--text-primary);
-  cursor: pointer;
-}
-.remote-ssh-form-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 8px;
-}
-.remote-ssh-hooks-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 14px;
-  font-size: 12px;
-  margin-bottom: 12px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--bg);
-}
-.remote-ssh-hooks-label {
-  color: var(--text-secondary);
-  font-weight: 500;
-}
-.remote-ssh-hooks-value {
-  color: var(--text-primary);
-}
-.remote-ssh-hooks-value.remote-ssh-hooks-never {
-  color: var(--toast-error);
-  font-weight: 600;
-}
-.remote-ssh-hooks-value.remote-ssh-hooks-deployed {
-  color: var(--text-secondary);
-}
-.remote-ssh-deploy-warn {
-  font-size: 13px;
-  color: var(--toast-error);
-  cursor: help;
-}
-
 /* ── Remote approval tab ── */
 .remote-approval-channel-card.collapsible-group {
   margin: 8px 0 14px;
@@ -3614,7 +3328,6 @@ html, body {
 .discord-appid-card.collapsible-group {
   margin: 14px 0;
 }
-
 .tg-approval-channel-header {
   display: flex;
   align-items: center;
@@ -3701,7 +3414,6 @@ html, body {
   color: var(--text-primary);
 }
 .tg-approval-badge-failed .tg-approval-channel-badge-dot { background: var(--toast-error); }
-
 .tg-approval-channel-status-row {
   display: flex;
   align-items: flex-start;
@@ -3730,7 +3442,6 @@ html, body {
   color: var(--text-primary);
   line-height: 1.45;
 }
-
 .tg-approval-token-stored-row {
   align-items: center;
 }
@@ -3806,7 +3517,6 @@ html, body {
 .tg-approval-output-select {
   min-width: 180px;
 }
-
 .feishu-approval-secrets-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -3832,7 +3542,6 @@ html, body {
     min-width: 0;
   }
 }
-
 .tg-approval-prereq-row .row-desc {
   color: var(--toast-error);
 }
@@ -3843,7 +3552,6 @@ html, body {
 .tg-approval-row-disabled .row-control .switch {
   cursor: not-allowed;
 }
-
 .row-desc a {
   color: var(--accent);
   text-decoration: underline;
@@ -3851,7 +3559,6 @@ html, body {
 .row-desc a:hover {
   opacity: 0.8;
 }
-
 /* === Mobile Tab === */
 .mobile-info-loading {
   color: var(--text-secondary);

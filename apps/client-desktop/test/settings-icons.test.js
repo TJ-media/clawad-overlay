@@ -27,7 +27,6 @@ const SIDEBAR_TAB_IDS = [
   "animOverrides",
   "shortcuts",
   "discord-presence",
-  "remote-ssh",
   "about",
 ];
 
