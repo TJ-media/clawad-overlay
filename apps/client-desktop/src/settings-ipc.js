@@ -10,23 +10,10 @@ const {
 } = require("./pet-customization-catalog");
 
 const SOUND_OVERRIDE_ASSET_EXTS = new Set([".mp3", ".wav", ".ogg", ".m4a", ".aac", ".flac"]);
-// These commands mutate trust material or persist facts learned from an SSH
-// transaction. They are main-process capabilities, not renderer commands.
-// Keeping the check at the IPC boundary means an injected/compromised Settings
-// renderer cannot mint a trusted install binding, advance a deployment
-// transaction, or claim that a remote profile was verified.
-const INTERNAL_SETTINGS_COMMANDS = new Set([
-  "remoteSsh.applyInstallationIdentity",
-  "remoteSsh.beginIdentityRotation",
-  "remoteSsh.updateIdentityStep",
-  "remoteSsh.commitIdentityRotation",
-  "remoteSsh.forceRevoke",
-  "remoteSsh.beginRuntimeModeSwitch",
-  "remoteSsh.advanceRuntimeModeSwitch",
-  "remoteSsh.switchRuntimeMode",
-  "remoteSsh.markDeployed",
-  "remoteSsh.markRemoteNode",
-]);
+// 메인 프로세스만 쓸 수 있는 명령 목록. 렌더러가 보낸 `settings:command`는 여기 있는
+// 이름을 쓸 수 없다 — 침해된 Settings 렌더러가 메인 전용 권한을 흉내내지 못하게 하는
+// 경계다. 원격 SSH 제거(CLAW-140)로 현재 항목은 없지만, 경계 자체는 유지한다.
+const INTERNAL_SETTINGS_COMMANDS = new Set([]);
 const SOUND_OVERRIDE_DIALOG_STRINGS = {
   en: { title: "Choose a sound file", filterName: "Audio" },
   zh: { title: "选择音效文件", filterName: "音频" },

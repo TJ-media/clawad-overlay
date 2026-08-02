@@ -1,4 +1,7 @@
-const { app, BrowserWindow, screen, ipcMain, globalShortcut, nativeTheme, dialog, shell, nativeImage, powerSaveBlocker, powerMonitor, clipboard, safeStorage } = require("electron");
+// Electron의 안전 저장소 API는 의도적으로 가져오지 않는다 (CLAW-154). 그것을 건드리면
+// macOS가 첫 실행에 로그인 키체인 암호를 묻고, 광고 표시에 필요한 기능도 아니다.
+// 되돌아오면 test/ 아래 회귀 가드가 실패한다.
+const { app, BrowserWindow, screen, ipcMain, globalShortcut, nativeTheme, dialog, shell, nativeImage, powerSaveBlocker, powerMonitor, clipboard } = require("electron");
 // ── Linux/Wayland: relaunch under XWayland so the pet is draggable (issue #441) ──
 // Native Wayland ignores client-side window positioning and blocks global cursor
 // queries, so the pet spawns centered, can't be dragged, and has no tracking;
@@ -243,7 +246,6 @@ const SIZES = {
 // `_settingsController.applyUpdate()`, which auto-persists.
 const prefsModule = require("./prefs");
 const { createSettingsController } = require("./settings-controller");
-const { loadOrCreateInstallationIdentity } = require("./remote-ssh-identity");
 const { createTranslator, i18n, SUPPORTED_LANGS } = require("./i18n");
 const {
   getBubblePolicy,
@@ -426,42 +428,6 @@ const _settingsController = createSettingsController({
     },
   },
 });
-let _remoteSshInstallationIdentity = null;
-
-async function initializeRemoteSshInstallationIdentity() {
-  const remoteSsh = _settingsController.get("remoteSsh") || {};
-  const persistedAuthorityPresent = Array.isArray(remoteSsh.profiles)
-    && remoteSsh.profiles.some((profile) => profile && (
-      typeof profile.routingNonce === "string"
-      || typeof profile.previousNonce === "string"
-      || !!profile.identityTxn
-      || profile.isolatedActive === true
-      || !!profile.isolatedRuntime
-      || (Array.isArray(profile.managedDeployTargets) && profile.managedDeployTargets.length > 0)
-      || (Number.isFinite(profile.lastDeployedAt) && profile.lastDeployedAt > 0)
-    ));
-  const identity = loadOrCreateInstallationIdentity({
-    userDataDir: app.getPath("userData"),
-    expectedInstallId: remoteSsh.installId,
-    persistedAuthorityPresent,
-    safeStorage,
-  });
-  const result = await _settingsController.applyCommand("remoteSsh.applyInstallationIdentity", {
-    installId: identity.installId,
-    cloneRecoveryRequired: identity.cloneRecoveryRequired === true,
-  });
-  if (!result || result.status !== "ok") {
-    throw new Error((result && result.message) || "failed to bind Remote SSH installation identity");
-  }
-  _remoteSshInstallationIdentity = Object.freeze(identity);
-  if (identity.cloneRecoveryRequired) {
-    console.warn("Clawd remote-ssh: local installation identity changed; remote profiles require redeploy");
-  }
-  if (!identity.strongStorage) {
-    console.warn(`Clawd remote-ssh: installation binding uses weak storage backend (${identity.storageBackend})`);
-  }
-  return identity;
-}
 
 // Mirror of `_settingsController.get("lang")` so existing sync read sites in
 // menu.js / state.js / etc. don't have to round-trip through the controller.
@@ -2626,7 +2592,6 @@ try {
 
 // ── Doctor tab IPC ──
 const { registerDoctorIpc } = require("./doctor-ipc");
-let _remoteSshRuntime = null;
 registerDoctorIpc({
   ipcMain,
   app,
@@ -2636,33 +2601,6 @@ registerDoctorIpc({
   getDoNotDisturb: () => doNotDisturb,
   getLocale: () => _settingsController.get("lang") || "en",
   resolveAgentDisplayName: _resolveAgentDisplayName,
-  getRemoteSshStatuses: () => _remoteSshRuntime
-    ? _remoteSshRuntime.listStatuses()
-    : [],
-});
-
-// ── Remote SSH (Phase 2) ──
-//
-// Runtime owner of background SSH tunnels. Profile CRUD goes through
-// settings-controller (commands "remoteSsh.add" / .update / .delete);
-// runtime state (Connect / Disconnect / Deploy / Authenticate / Open
-// Terminal) goes through `remote-ssh-ipc.js`. Cleanup on app quit kills
-// any spawned ssh / scp children.
-const { createRemoteSshRuntime } = require("./remote-ssh-runtime");
-const { registerRemoteSshIpc } = require("./remote-ssh-ipc");
-_remoteSshRuntime = createRemoteSshRuntime({
-  getHookServerPort: () => getHookServerPort(),
-  createProfileIngress: (options) => _server.openRemoteSshIngress(options),
-  log: (...args) => console.warn("Clawd remote-ssh:", ...args),
-});
-const _remoteSshIpc = registerRemoteSshIpc({
-  ipcMain,
-  settingsController: _settingsController,
-  remoteSshRuntime: _remoteSshRuntime,
-  BrowserWindow,
-  isPackaged: app.isPackaged,
-  getInstallationIdentity: () => _remoteSshInstallationIdentity,
-  enableProfileIsolation: process.env.CLAWD_ENABLE_EXPERIMENTAL_REMOTE_ISOLATION === "1",
 });
 
 // ── Settings panel window ──
@@ -2929,15 +2867,8 @@ function createWindow() {
 
   initFocusHelper();
   startMainTick();
-  // Silently connect any remote SSH profile flagged "connect on launch" once
-  // the hook server is ACTUALLY listening and its real port is known.
-  // runtime.connect() reads getHookServerPort() synchronously to build the SSH
-  // reverse tunnel, and listen() is async — sweeping before the 'listening'
-  // event would read a stale fallback port and tunnel to the wrong local port
-  // if the bind drifted (port in use, multi-instance). startHttpServer()
-  // resolves null when no port could be bound, in which case we skip the sweep.
-  // Best-effort: failures fall back to the runtime's own reconnect/backoff and
-  // never block startup.
+  // 훅 서버가 실제로 listen을 시작한 뒤에 세션 복구를 돌린다. startHttpServer()는
+  // 포트를 잡지 못하면 null로 resolve하며, 그때는 복구를 건너뛴다.
   startHttpServer().then((port) => {
     if (port == null) return;
     const restoredSessionIds = restoreSessionsFromRecoveryLeases(_state, {
@@ -2958,7 +2889,6 @@ function createWindow() {
       }
       sessionLog(`startup recovery restored sessions=${restoredSessionIds.join(",")}`);
     }
-    try { _remoteSshIpc.connectOnLaunchProfiles(); } catch {}
   }).catch(() => {});
   startStaleCleanup();
   // Wait for renderer to be ready before sending initial state
@@ -3323,12 +3253,6 @@ if (!gotTheLock) {
     // First-run only: seed UI language from the device locale, before createWindow
     // so the very first menu/tray render is already in the user's language.
     hydrateFreshInstallLanguage();
-    try {
-      await initializeRemoteSshInstallationIdentity();
-    } catch (err) {
-      _remoteSshInstallationIdentity = null;
-      console.error("Clawd remote-ssh: installation identity initialization failed:", err && err.message);
-    }
 
     permDebugLog = path.join(app.getPath("userData"), "permission-debug.log");
     updateDebugLog = path.join(app.getPath("userData"), "update-debug.log");
@@ -3458,8 +3382,6 @@ if (!gotTheLock) {
     themeRuntime.cleanup();
     _focus.cleanup();
     if (animationOverridesMain) animationOverridesMain.cleanup();
-    try { _remoteSshIpc.dispose(); } catch {}
-    try { _remoteSshRuntime.cleanup(); } catch {}
     if (hitWin && !hitWin.isDestroyed()) hitWin.destroy();
   });
 

@@ -7,7 +7,6 @@
 // through wsl.exe stdin to avoid /mnt/ path assumptions and command-line
 // length limits.
 //
-// Conceptually mirrors src/remote-ssh-deploy.js: both deploy hook scripts
 // to a remote environment and run agent-specific install scripts. Step
 // lists differ (wsl.exe stdin pipe vs scp) but new deploy requirements
 // should be addressed in both paths.

@@ -1,12 +1,14 @@
 "use strict";
 
-// ── Remote SSH platform quoting helpers ──
+// ── 플랫폼별 셸 인용 헬퍼 ──
 //
-// Pure functions for safely embedding ssh/scp arguments into terminal
-// command strings on three platforms. Used when Clawd spawns a system
-// terminal (Authenticate / Open Terminal) instead of running ssh as a
-// child process — those code paths must hand a single string to the OS
-// terminal, which re-interprets it.
+// 터미널 명령 문자열에 인자를 안전하게 끼워 넣는 순수 함수들. 시스템 터미널을
+// 띄우는 경로(launch-claude.js의 "터미널로 이동")가 쓴다 — 자식 프로세스로
+// 직접 실행하는 것과 달리, OS 터미널에 문자열 하나를 넘기면 그쪽이 다시
+// 해석하기 때문이다.
+//
+// 원격 SSH 제거(CLAW-140) 전에는 remote-ssh-quote.js였다. 인용 로직 자체는
+// SSH와 무관한 범용 유틸이라 이름만 바꿔 남긴다.
 //
 // Three helpers, three layers:
 //
