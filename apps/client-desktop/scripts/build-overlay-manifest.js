@@ -80,6 +80,39 @@ if (!published.length) {
 const missing = required.filter((key) => !artifacts[key]);
 if (missing.length) fail(`요구한 산출물이 dist/에 없습니다: ${missing.join(', ')}`);
 
+// ── 경량 업데이트 (CLAW-161) ────────────────────────────────────────────
+//
+// 앱 358MB 중 우리 코드는 app.asar 6.8MB뿐이다. Electron 프레임워크(263MB)와 네이티브
+// 모듈(87MB)이 그대로면 asar만 갈아도 된다. 그 판단에 쓰는 값이 runtimeId다.
+//
+// **번들 내부를 뒤지지 않는다.** Electron 버전과 의존성 목록만으로 만든다 — 둘 중 하나라도
+// 바뀌면 프레임워크나 unpacked 트리가 바뀔 수 있으므로 전체 교체로 간다. devDependencies도
+// 넣는다: electron-builder가 바뀌면 packing 방식이 달라질 수 있다.
+//
+// 방향은 보수적이다. 순수 JS 의존성만 올려도 전체 교체가 되지만, 그 반대(갈면 안 되는데
+// asar만 가는 것)보다 낫다 — 그쪽은 앱이 안 켜진다.
+function computeRuntimeId(packageJson) {
+  const electron = (packageJson.devDependencies || {}).electron || '';
+  const deps = { ...(packageJson.dependencies || {}), ...(packageJson.devDependencies || {}) };
+  const sorted = Object.keys(deps).sort().map((name) => `${name}@${deps[name]}`).join('\n');
+  return crypto.createHash('sha256').update(`electron=${electron}\n${sorted}`).digest('hex');
+}
+
+const runtimeId = computeRuntimeId(pkg);
+const codeUpdate = {};
+for (const arch of ['arm64', 'x64']) {
+  const file = `app-${version}-${arch}.asar`;
+  const filePath = path.join(DIST, file);
+  if (!fs.existsSync(filePath)) continue;
+  const bytes = fs.readFileSync(filePath);
+  codeUpdate[`darwin-${arch}`] = {
+    url: `https://github.com/${REPO_SLUG}/releases/download/v${version}/${file}`,
+    sha256: crypto.createHash('sha256').update(bytes).digest('hex'),
+    bytes: bytes.length,
+  };
+  published.push({ key: `asar-${arch}`, file, size: bytes.length });
+}
+
 // 0.1.12까지 배포된 CLI는 artifacts를 모르고 최상위의 평평한 필드만 읽는다. 그 CLI가
 // 이 매니페스트를 만나도 Windows 설치가 계속되도록 win32-x64를 최상위에도 복제한다.
 // 새 CLI는 artifacts를 먼저 보므로 이 필드에 영향받지 않는다. 배포된 CLI가 모두
@@ -104,6 +137,10 @@ const manifest = {
   // 어느 릴리스가 무서명이었는지 릴리스만 보고 구분할 수 있다.
   signed: false,
   artifacts,
+  // 설치 시 기록해 두었다가 다음 갱신에서 대조한다. 같으면 asar만, 다르면 전체 교체 (CLAW-161).
+  runtimeId,
+  // **선택 항목이다.** 구 CLI는 이 블록을 모르고 전체 교체만 하므로 릴리스 순서에 무관하다.
+  ...(Object.keys(codeUpdate).length ? { codeUpdate } : {}),
 };
 
 const out = path.join(DIST, 'overlay-manifest.json');

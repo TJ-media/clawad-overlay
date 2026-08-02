@@ -66,6 +66,12 @@ jobs:
       - name: 빌드
         run: npm run ${{ matrix.script }}
 
+      # 경량 업데이트용 app.asar를 꺼낸다 (CLAW-161). .app 번들은 이 러너에만 있다 —
+      # 릴리스에 올라가는 것은 zip·dmg뿐이라 매니페스트를 만드는 publish 잡은 보지 못한다.
+      - name: app.asar 수집 (macOS)
+        if: runner.os == 'macOS'
+        run: node scripts/collect-asar.js
+
       # 매니페스트 생성은 두 러너의 산출물이 다 모인 뒤에 한 번만 한다.
       - uses: actions/upload-artifact@v4
         with:
@@ -76,6 +82,7 @@ jobs:
             apps/client-desktop/dist/*.dmg
             apps/client-desktop/dist/*.blockmap
             apps/client-desktop/dist/latest*.yml
+            apps/client-desktop/dist/*.asar
           if-no-files-found: error
           retention-days: 7
 
@@ -118,4 +125,4 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --title "클로애드 오버레이 $GITHUB_REF_NAME (알파)" \
             --notes "무서명 알파 빌드입니다. 설치는 클로애드 CLI의 setup 명령을 쓰세요." \
-            dist/*.exe dist/*.zip dist/*.dmg dist/*.blockmap dist/latest*.yml dist/overlay-manifest.json
+            dist/*.exe dist/*.zip dist/*.dmg dist/*.blockmap dist/latest*.yml dist/*.asar dist/overlay-manifest.json

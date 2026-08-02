@@ -117,6 +117,7 @@ scripts/*
 !scripts/export-app-icons.js
 !scripts/verify-electron-install.js
 !scripts/build-overlay-manifest.js
+!scripts/collect-asar.js
 !scripts/verify-signature.js
 
 # oh-my-cursor state
