@@ -94,6 +94,28 @@ function findWindowsArm64InstallerAsset(release) {
   }) || null;
 }
 
+/**
+ * 이 맥에 설치할 dmg (CLAW-158).
+ *
+ * 무서명 빌드라 macOS는 electron-updater로 자동 설치를 할 수 없다(Squirrel.Mac이 교체 전에
+ * 코드서명을 검증한다). 그래서 브라우저로 내보내는데, 릴리스 **페이지**를 열면 사용자가
+ * arm64/x64를 직접 골라야 한다. 이 기기에 맞는 파일 URL을 바로 열어 그 단계를 없앤다.
+ *
+ * `.zip`은 Squirrel.Mac 자동 업데이트용이라 고르지 않는다 — 사람이 열 대상은 dmg다.
+ * Rosetta로 도는 x64 빌드에는 arm64를 권한다. 네이티브가 빠르고, Windows ARM64 경로
+ * (`shouldPromptNativeArm64`)가 이미 같은 판단을 한다.
+ */
+function findMacInstallerAsset(release, { arch, runningUnderARM64Translation } = {}) {
+  const assets = release && Array.isArray(release.assets) ? release.assets : [];
+  const wantArm64 = arch === "arm64" || !!runningUnderARM64Translation;
+  const pick = (wanted) => assets.find((asset) => {
+    const name = String(asset && asset.name || "");
+    return new RegExp(`-${wanted}\\.dmg$`, "i").test(name) && asset.browser_download_url;
+  }) || null;
+  // 원하는 아키텍처가 없으면 반대쪽이라도 준다 — Rosetta·에뮬레이션으로 열리기는 한다.
+  return pick(wantArm64 ? "arm64" : "x64") || pick(wantArm64 ? "x64" : "arm64");
+}
+
 function initUpdater(ctx, deps = {}) {
   const app = deps.app || electron.app;
   const shell = deps.shell || electron.shell;
@@ -1064,13 +1086,35 @@ function initUpdater(ctx, deps = {}) {
 
       const onPrimary = async () => {
         if (isMac) {
-          shell.openExternal(RELEASES_LATEST_URL);
+          // 이 기기에 맞는 dmg를 바로 연다. 자산을 못 찾으면(릴리스 조회 실패·자산 누락)
+          // 예전처럼 릴리스 페이지로 보낸다 — 고르는 수고가 남을 뿐 막히지는 않는다.
+          let target = RELEASES_LATEST_URL;
+          let picked = false;
+          try {
+            const asset = findMacInstallerAsset(await fetchLatestRelease(), {
+              arch: runtimeArch,
+              runningUnderARM64Translation: deps.runningUnderARM64Translation != null
+                ? deps.runningUnderARM64Translation
+                : app.runningUnderARM64Translation,
+            });
+            if (asset && asset.browser_download_url) {
+              target = asset.browser_download_url;
+              picked = true;
+            } else {
+              log("macOS installer asset not found in latest release; opening releases page");
+            }
+          } catch (err) {
+            log(`macOS installer asset lookup failed: ${getErrorMessage(err)}; opening releases page`);
+          }
+          shell.openExternal(target);
           updateStatus = "idle";
           clearActiveCheck();
           rebuildMenus();
           await showSuccessBubble({
             title: t("updateReady", "Update Ready"),
-            message: t("macUpdateOpened", "Opened the latest download page in your browser."),
+            message: picked
+              ? t("macUpdateDownloadStarted", "Started downloading the installer for this Mac.")
+              : t("macUpdateOpened", "Opened the latest download page in your browser."),
             version: info.version,
             actions: [
               { id: "dismiss", label: t("dismiss", "Dismiss"), variant: "secondary" },
@@ -1356,6 +1400,7 @@ module.exports = initUpdater;
 module.exports.__test = {
   DEPENDENCY_INSTALL_TIMEOUT_MS,
   compareVersions,
+  findMacInstallerAsset,
   findWindowsArm64InstallerAsset,
   formatVersionForMessage,
   isUpdate404Error,
