@@ -17,8 +17,12 @@ test("광고와 안내는 HUD 상태 칩 색상으로 구분된다", () => {
 });
 
 test("어두운 화면에서도 광고와 안내 상태 칩을 구분한다", () => {
-  assert.match(html, /#label\s*\{[^}]*background:\s*rgba\(245, 158, 11, 0\.20\)[^}]*color:\s*#fbbf24/s);
-  assert.match(html, /#notice-label\s*\{[^}]*background:\s*rgba\(22, 163, 74, 0\.20\)[^}]*color:\s*#4ade80/s);
+  const darkModeChips = html.match(
+    /@media \(prefers-color-scheme: dark\)\s*\{\s*(#label\s*\{[^}]*\}\s*#notice-label\s*\{[^}]*\})\s*\}/s,
+  );
+  assert.ok(darkModeChips, "다크모드 상태 칩 규칙은 dark media block 안에 있어야 한다");
+  assert.match(darkModeChips[1], /#label\s*\{[^}]*background:\s*rgba\(245, 158, 11, 0\.20\)[^}]*color:\s*#fbbf24/s);
+  assert.match(darkModeChips[1], /#notice-label\s*\{[^}]*background:\s*rgba\(22, 163, 74, 0\.20\)[^}]*color:\s*#4ade80/s);
 });
 
 test("안내 끄기는 배지 대신 밑줄 버튼이다", () => {
