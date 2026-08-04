@@ -28,9 +28,13 @@ function mountRenderer() {
   }]));
 
   let render = null;
-  global.document = { getElementById: (id) => nodes.get(id) || null };
+  const body = {};
+  global.document = { getElementById: (id) => nodes.get(id) || null, body };
   const reported = [];
   global.window = {
+    // clawad-ad.html의 `body { padding: 2px 3px 8px; }`와 같은 값. 창 폭은 스트립 바깥의
+    // 이 여백까지 포함해야 한다 — 빼먹으면 문구가 길이와 무관하게 말줄임된다.
+    getComputedStyle: (node) => (node === body ? { paddingLeft: "3px", paddingRight: "3px" } : {}),
     clawadAdAPI: {
       onAd: (cb) => { render = cb; },
       openAd: () => {},
@@ -188,6 +192,9 @@ test("광고가 아닌 표시에는 notice 클래스가 붙어 [광고]가 [안�
 
 // --- 가변 폭 측정 (CLAW-156) ---
 
+/** clawad-ad.html의 body 좌우 여백(3px + 3px). 창 폭은 스트립 바깥의 이 여백까지 포함해야 한다. */
+const BODY_SIDE_PADDING = 6;
+
 test("렌더 후 내용 자연 폭을 메인에 보고한다", (t) => {
   t.mock.timers.enable({ apis: ["setInterval"] });
   const { render, reported } = mountRenderer();
@@ -195,7 +202,20 @@ test("렌더 후 내용 자연 폭을 메인에 보고한다", (t) => {
   render({ kind: "ad", text: "짧은 광고", brand: "클로애드", linked: false, reward: null });
 
   assert.strictEqual(reported.length, 1);
-  assert.strictEqual(reported[0], 40 + "짧은 광고".length * 7);
+  assert.strictEqual(reported[0], 40 + "짧은 광고".length * 7 + BODY_SIDE_PADDING);
+});
+
+// 메인은 보고받은 값을 그대로 **창 폭**으로 쓴다. 스트립 폭만 보고하면 창이 body 여백만큼
+// 좁게 떠서 스트립이 눌리고, 문구가 짧든 길든 전부 말줄임된다. 그 회귀를 여기서 잡는다.
+test("보고 폭은 스트립 폭이 아니라 body 여백을 더한 창 폭이다", (t) => {
+  t.mock.timers.enable({ apis: ["setInterval"] });
+  const { render, reported } = mountRenderer();
+
+  render({ kind: "ad", text: "짧은", brand: "", linked: false, reward: null });
+  const stripWidth = 40 + "짧은".length * 7;
+
+  assert.ok(reported[0] > stripWidth, "창 폭은 스트립 폭보다 커야 한다 — 안 그러면 항상 말줄임된다");
+  assert.strictEqual(reported[0] - stripWidth, BODY_SIDE_PADDING);
 });
 
 test("문구가 길어지면 보고하는 폭도 커진다", (t) => {

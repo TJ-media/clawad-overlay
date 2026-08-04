@@ -126,10 +126,16 @@
     const stripWidth = strip.style.width;
     text.style.flex = "0 0 auto";
     strip.style.width = "max-content";
-    const measured = Math.ceil(strip.getBoundingClientRect().width);
+    const measured = strip.getBoundingClientRect().width;
     strip.style.width = stripWidth;
     text.style.flex = textFlex;
-    return measured;
+    // 메인은 이 값을 **창 폭**으로 쓴다. 그런데 스트립은 body 안에 있고 body에는 좌우 여백이
+    // 있으므로(세션 HUD와 맞춘 padding), 여백을 더하지 않으면 창이 스트립보다 그만큼 좁게 떠서
+    // 스트립이 눌리고 **문구가 길이와 무관하게 항상 말줄임된다.**
+    // 상수로 박지 않고 계산값에서 읽는다 — CSS가 유일한 출처여야 둘이 어긋나지 않는다.
+    const bodyStyle = window.getComputedStyle(document.body);
+    const sidePadding = parseFloat(bodyStyle.paddingLeft) + parseFloat(bodyStyle.paddingRight);
+    return Math.ceil(measured + (Number.isFinite(sidePadding) ? sidePadding : 0));
   }
 
   function reportWidth() {
