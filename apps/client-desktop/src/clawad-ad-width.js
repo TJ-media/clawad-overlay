@@ -40,27 +40,21 @@ function shouldAdopt(nextPx, currentPx) {
 }
 
 /**
- * 패널 높이(논리 픽셀). 실측값이다 — 1행 17 + 행간 2 + 2행 14 + 패널 상하 패딩 10 +
- * body 상하 여백 10 = 53에 여유 2 (CLAW-138). 줄 높이는 폰트 스택에 달려 있어 줄이면 2행이 잘린다.
+ * 패널 높이(논리 픽셀). 실측값이다 — 본문 두 번째 줄과 metadata가 둘째 행을 공유하고,
+ * 패널 상하 패딩과 body 상하 여백까지 포함한다 (CLAW-169).
  */
 const NOTICE_STRIP_HEIGHT = 55;
 /** 문구 한 줄 높이. clawad-ad.html의 `#text { line-height }`와 같은 값이어야 한다. */
 const TEXT_LINE_HEIGHT = 17;
-/** 광고만 문구를 두 줄까지 쓴다 (CLAW-162). 늘어난 줄 하나만큼만 더 잡는다. */
-const AD_STRIP_HEIGHT = NOTICE_STRIP_HEIGHT + TEXT_LINE_HEIGHT;
+/** 기존 소비자 호환용 이름. 모든 표시 종류가 같은 두 행 높이를 쓴다. */
+const AD_STRIP_HEIGHT = NOTICE_STRIP_HEIGHT;
 
 /**
- * 표시 종류별 패널 높이 (CLAW-162).
- *
- * 광고는 두 줄이다 — 정책 상한(420px)이 운영 소재보다 좁아 한 줄로는 짧은 문구까지 전부
- * 말줄임됐다. 폭을 키워 화면을 더 차지하는 대신 세로를 한 줄 내준다.
- * 안내·로그인은 광고가 아니라 자리 채움이므로 한 줄을 유지한다.
- *
- * `kind`를 모르면(구 payload) 광고로 보지 않는다 — 높이를 과하게 잡아 빈 칸을 만들기보다
- * 기존 높이를 쓰는 쪽이 안전하다. 표기(`[광고]`) 판단과 달리 여기서는 보수적으로 간다.
+ * 표시 종류와 무관한 공통 두 행 패널 높이 (CLAW-169).
+ * `kind` 인자는 구 호출자와의 호환을 위해 받지만 높이 결정에는 쓰지 않는다.
  */
-function stripHeight(kind) {
-  return kind === "ad" ? AD_STRIP_HEIGHT : NOTICE_STRIP_HEIGHT;
+function stripHeight() {
+  return NOTICE_STRIP_HEIGHT;
 }
 
 module.exports = {

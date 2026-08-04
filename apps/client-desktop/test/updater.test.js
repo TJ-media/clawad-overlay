@@ -970,63 +970,59 @@ describe("updater visual flow", () => {
     assert.strictEqual(hideCount, 0);
   });
 
-  it("uses the macOS packaged-update path by opening the releases page and showing a success bubble", async () => {
-    const originalPlatform = process.platform;
+  it("uses the macOS packaged-update path by opening the releases page and showing a success bubble", async (t) => {
     const bubbles = [];
     const handlers = {};
     const openedUrls = [];
-    Object.defineProperty(process, "platform", { value: "darwin" });
-    try {
-      delete require.cache[require.resolve("../src/updater")];
-      initUpdater = require("../src/updater");
-      const ctx = makeCtx({
-        showUpdateBubble: async (payload) => {
-          bubbles.push(payload);
-          if (payload.mode === "available") return "primary";
-          if (payload.mode === "ready") return "dismiss";
-          return payload.defaultAction || null;
+    const emptyClawadDataDir = fs.mkdtempSync(path.join(os.tmpdir(), "clawad-bridge-empty-"));
+    t.after(() => fs.rmSync(emptyClawadDataDir, { recursive: true, force: true }));
+    const ctx = makeCtx({
+      showUpdateBubble: async (payload) => {
+        bubbles.push(payload);
+        if (payload.mode === "available") return "primary";
+        if (payload.mode === "ready") return "dismiss";
+        return payload.defaultAction || null;
+      },
+    });
+    const updater = initUpdater(ctx, makeDeps({
+      platform: "darwin",
+      clawadDataDir: emptyClawadDataDir,
+      shell: {
+        openExternal(url) {
+          openedUrls.push(url);
         },
-      });
-      const updater = initUpdater(ctx, makeDeps({
-        shell: {
-          openExternal(url) {
-            openedUrls.push(url);
+      },
+      autoUpdaterFactory: () => ({
+        autoDownload: false,
+        autoInstallOnAppQuit: true,
+        on(event, handler) { handlers[event] = handler; },
+        checkForUpdates: async () => ({ updateInfo: { version: "0.5.11" } }),
+        quitAndInstall() {},
+        downloadUpdate() {
+          throw new Error("downloadUpdate should not run on macOS");
+        },
+      }),
+      httpsGetImpl: (options, cb) => {
+        const res = {
+          statusCode: 200,
+          on(event, handler) {
+            if (event === "data") handler(Buffer.from(JSON.stringify({ tag_name: "v0.5.11" })));
+            if (event === "end") handler();
+            return this;
           },
-        },
-        autoUpdaterFactory: () => ({
-          autoDownload: false,
-          autoInstallOnAppQuit: true,
-          on(event, handler) { handlers[event] = handler; },
-          checkForUpdates: async () => ({ updateInfo: { version: "0.5.11" } }),
-          quitAndInstall() {},
-          downloadUpdate() {
-            throw new Error("downloadUpdate should not run on macOS");
-          },
-        }),
-        httpsGetImpl: (options, cb) => {
-          const res = {
-            statusCode: 200,
-            on(event, handler) {
-              if (event === "data") handler(Buffer.from(JSON.stringify({ tag_name: "v0.5.11" })));
-              if (event === "end") handler();
-              return this;
-            },
-          };
-          cb(res);
-          return { on() { return this; }, setTimeout() {} };
-        },
-      }));
+        };
+        cb(res);
+        return { on() { return this; }, setTimeout() {} };
+      },
+    }));
 
-      updater.setupAutoUpdater();
-      await updater.checkForUpdates(true);
-      await handlers["update-available"]({ version: "0.5.11" });
+    updater.setupAutoUpdater();
+    await updater.checkForUpdates(true);
+    await handlers["update-available"]({ version: "0.5.11" });
 
-      assert.deepStrictEqual(bubbles.map((bubble) => bubble.mode), ["checking", "available", "ready"]);
-      assert.strictEqual(openedUrls[0], "https://github.com/TJ-media/clawad-overlay/releases/latest");
-      assert.match(bubbles[2].message, /opened/i);
-    } finally {
-      Object.defineProperty(process, "platform", { value: originalPlatform });
-    }
+    assert.deepStrictEqual(bubbles.map((bubble) => bubble.mode), ["checking", "available", "ready"]);
+    assert.strictEqual(openedUrls[0], "https://github.com/TJ-media/clawad-overlay/releases/latest");
+    assert.match(bubbles[2].message, /opened/i);
   });
 
   it("uses a friendly dirty-worktree message while keeping detailed file status", async () => {
@@ -1547,8 +1543,8 @@ describe("updater #329 background scheduler", () => {
   });
 });
 
-describe("updater 오버레이 갱신 위임 (CLAW-160)", () => {
-  // CLAW-160: 브라우저로 받으면 격리 속성이 붙어 Gatekeeper가 막는다. clawad에 넘긴다.
+describe("updater CLI 갱신 위임 (CLAW-167)", () => {
+  // CLAW-167: 업데이트 승인을 검증된 clawad 설치본의 update.js에 넘긴다.
   function stageClawadInstall() {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "clawad-bridge-"));
     const dataDir = path.join(root, "data");
@@ -1557,17 +1553,17 @@ describe("updater 오버레이 갱신 위임 (CLAW-160)", () => {
     fs.mkdirSync(clientDir, { recursive: true });
     const node = path.join(root, "node");
     fs.writeFileSync(node, "#!/bin/sh\n");
-    fs.writeFileSync(path.join(clientDir, "overlay-update.js"), "// stub\n");
+    fs.writeFileSync(path.join(clientDir, "update.js"), "// stub\n");
     fs.writeFileSync(path.join(dataDir, "overlay-trigger.json"), JSON.stringify({
       version: 1,
       node,
       script: path.join(clientDir, "overlay-events.js"),
       args: ["collect"],
     }));
-    return { root, dataDir, node, script: path.join(clientDir, "overlay-update.js") };
+    return { root, dataDir, node, script: path.join(clientDir, "update.js") };
   }
 
-  it("갱신을 clawad에 넘길 때 분리 실행한다 — 우리가 꺼져도 교체가 이어져야 한다 (CLAW-160)", () => {
+  it("같은 오버레이 버전의 CLI 갱신은 한 번만 분리 실행한다 (CLAW-167)", () => {
     const staged = stageClawadInstall();
     const spawned = [];
     const updater = initUpdater(makeCtx(), makeDeps({
@@ -1578,17 +1574,19 @@ describe("updater 오버레이 갱신 위임 (CLAW-160)", () => {
       },
     }));
 
-    const result = updater.startOverlayUpdate();
+    const first = updater.startClawadUpdate("0.1.9");
+    const second = updater.startClawadUpdate("0.1.9");
 
-    assert.strictEqual(result.status, "started");
+    assert.strictEqual(first.status, "started");
+    assert.strictEqual(second.status, "duplicate");
     assert.strictEqual(spawned.length, 1);
     assert.strictEqual(spawned[0].file, staged.node);
     assert.deepStrictEqual(spawned[0].args, [staged.script]);
-    assert.strictEqual(spawned[0].options.detached, true, "분리 실행이 아니면 우리가 꺼질 때 함께 죽는다");
+    assert.strictEqual(spawned[0].options.detached, true, "분리 실행이 아니면 앱 종료 시 함께 죽는다");
     fs.rmSync(staged.root, { recursive: true, force: true });
   });
 
-  it("clawad가 없으면 넘기지 않는다 — 호출부가 릴리스 페이지로 되돌아간다 (CLAW-160)", () => {
+  it("clawad가 없으면 CLI 갱신을 시작하지 않는다", () => {
     const empty = fs.mkdtempSync(path.join(os.tmpdir(), "clawad-bridge-empty-"));
     let spawned = 0;
     const updater = initUpdater(makeCtx(), makeDeps({
@@ -1596,8 +1594,99 @@ describe("updater 오버레이 갱신 위임 (CLAW-160)", () => {
       spawnImpl: () => { spawned += 1; return { on() {}, unref() {} }; },
     }));
 
-    assert.strictEqual(updater.startOverlayUpdate().status, "unavailable");
+    assert.strictEqual(updater.startClawadUpdate("0.1.9").status, "unavailable");
     assert.strictEqual(spawned, 0);
     fs.rmSync(empty, { recursive: true, force: true });
+  });
+
+  it("Windows는 CLI 갱신과 오버레이 다운로드를 각각 한 번 시작한다", async () => {
+    const staged = stageClawadInstall();
+    const handlers = {};
+    const spawned = [];
+    let downloads = 0;
+    const updater = initUpdater(makeCtx({
+      showUpdateBubble: async (payload) => payload.mode === "available" ? "primary" : payload.defaultAction,
+    }), makeDeps({
+      platform: "win32",
+      clawadDataDir: staged.dataDir,
+      spawnImpl: (file, args, options) => {
+        spawned.push({ file, args, options });
+        return { on() {}, unref() {} };
+      },
+      autoUpdaterFactory: () => ({
+        autoDownload: false,
+        autoInstallOnAppQuit: true,
+        on(event, handler) { handlers[event] = handler; },
+        checkForUpdates: async () => null,
+        quitAndInstall() {},
+        downloadUpdate() { downloads += 1; },
+      }),
+    }));
+
+    updater.setupAutoUpdater();
+    await handlers["update-available"]({ version: "0.1.9" });
+
+    assert.strictEqual(spawned.length, 1);
+    assert.strictEqual(downloads, 1);
+    fs.rmSync(staged.root, { recursive: true, force: true });
+  });
+
+  it("Windows는 CLI 갱신 시작이 실패해도 오버레이 다운로드를 계속한다", async () => {
+    const staged = stageClawadInstall();
+    const handlers = {};
+    let downloads = 0;
+    const updater = initUpdater(makeCtx({
+      showUpdateBubble: async (payload) => payload.mode === "available" ? "primary" : payload.defaultAction,
+    }), makeDeps({
+      platform: "win32",
+      clawadDataDir: staged.dataDir,
+      spawnImpl: () => { throw new Error("spawn failed"); },
+      autoUpdaterFactory: () => ({
+        autoDownload: false,
+        autoInstallOnAppQuit: true,
+        on(event, handler) { handlers[event] = handler; },
+        checkForUpdates: async () => null,
+        quitAndInstall() {},
+        downloadUpdate() { downloads += 1; },
+      }),
+    }));
+
+    updater.setupAutoUpdater();
+    await handlers["update-available"]({ version: "0.1.9" });
+
+    assert.strictEqual(downloads, 1);
+    fs.rmSync(staged.root, { recursive: true, force: true });
+  });
+
+  it("macOS는 같은 버전 위임이 이미 시작됐어도 종료하고 CLI 교체를 기다린다", async () => {
+    const staged = stageClawadInstall();
+    const handlers = {};
+    let quits = 0;
+    let opened = 0;
+    const updater = initUpdater(makeCtx({
+      showUpdateBubble: async (payload) => payload.mode === "available" ? "primary" : payload.defaultAction,
+    }), makeDeps({
+      platform: "darwin",
+      clawadDataDir: staged.dataDir,
+      spawnImpl: () => ({ on() {}, unref() {} }),
+      quitImpl: () => { quits += 1; },
+      shell: { openExternal() { opened += 1; } },
+      autoUpdaterFactory: () => ({
+        autoDownload: false,
+        autoInstallOnAppQuit: true,
+        on(event, handler) { handlers[event] = handler; },
+        checkForUpdates: async () => null,
+        quitAndInstall() {},
+        downloadUpdate() { throw new Error("macOS must not download directly"); },
+      }),
+    }));
+
+    assert.strictEqual(updater.startClawadUpdate("0.1.9").status, "started");
+    updater.setupAutoUpdater();
+    await handlers["update-available"]({ version: "0.1.9" });
+
+    assert.strictEqual(quits, 1);
+    assert.strictEqual(opened, 0);
+    fs.rmSync(staged.root, { recursive: true, force: true });
   });
 });
