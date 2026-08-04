@@ -450,6 +450,29 @@ test("클릭 링크는 https만 통과시킨다", () => {
   assert.strictEqual(safeClickUrl(undefined), null);
 });
 
+test("리워드샵 URL은 정책 캐시의 https 선택 필드만 노출한다 (CLAW-166)", () => {
+  const basePolicy = {
+    version: 1,
+    overlay: { adRotateMs: POLICY.adRotateMs, adGapMs: POLICY.adGapMs, idleThresholdMs: POLICY.idleThresholdMs, maxWidthPx: POLICY.maxWidthPx },
+    impression: { minViewMs: POLICY.minViewMs },
+    activity: { staleActiveMs: POLICY.staleActiveMs },
+  };
+  const valid = runtimeWithRecorder(makeData({
+    policy: { ...basePolicy, rewardShopUrl: "https://clawad.whatsup.house/" },
+  })).runtime;
+  assert.strictEqual(valid.rewardShopUrl && valid.rewardShopUrl(), "https://clawad.whatsup.house/");
+
+  const insecure = runtimeWithRecorder(makeData({
+    policy: { ...basePolicy, rewardShopUrl: "http://clawad.whatsup.house/" },
+  })).runtime;
+  assert.strictEqual(insecure.rewardShopUrl && insecure.rewardShopUrl(), null, "http 링크는 메뉴에 내보내지 않는다");
+  assert.ok(insecure.canRender(), "잘못된 선택 필드 때문에 광고 기능까지 꺼지면 안 된다");
+
+  const legacy = runtimeWithRecorder(makeData({ policy: basePolicy })).runtime;
+  assert.strictEqual(legacy.rewardShopUrl && legacy.rewardShopUrl(), null, "구 CLI에는 메뉴를 숨긴다");
+  assert.ok(legacy.canRender(), "선택 필드가 없는 구 CLI에서도 광고는 유지한다");
+});
+
 test("표시 payload에 검증된 링크가 실려 온다 — 없으면 null", () => {
   const withLink = makeData({ bundles: [{ ...bundle("token.link"), clickUrl: "https://www.instagram.com/whatsup_house/" }] });
   assert.strictEqual(runtimeWithRecorder(withLink).runtime.tick(Date.now()).clickUrl, "https://www.instagram.com/whatsup_house/");
@@ -569,14 +592,17 @@ test("displayContext는 광고 재고가 없어도 작업 중이면 맥락을 �
   assert.deepStrictEqual(runtime.displayContext(Date.now()), idle, "안내 문구는 띄울 수 있어야 한다");
 });
 
-test("displayContext는 정책이 없거나 작업 중이 아니면 null이다", () => {
+test("displayContext는 정책이 없을 때만 null이고 유휴 상태에서도 안내 맥락을 돌려준다 (CLAW-163)", () => {
   assert.strictEqual(runtimeWithRecorder(makeData({ policy: null })).runtime.displayContext(Date.now()), null,
     "정책이 없으면 안내도 띄우지 않는다");
 
   const idle = makeData({ active: false });
   writeActive(idle, { active: false, endedAgoMs: POLICY.idleThresholdMs + 60000 });
-  assert.strictEqual(runtimeWithRecorder(idle).runtime.displayContext(Date.now()), null,
-    "놀고 있을 때 띄우면 잔소리가 된다");
+  assert.deepStrictEqual(runtimeWithRecorder(idle).runtime.displayContext(Date.now()), {
+    maxWidthPx: POLICY.maxWidthPx,
+    exhausted: false,
+    reward: null,
+  }, "광고와 달리 안내는 작업 중 여부와 무관하게 보여줄 수 있어야 한다");
 });
 
 // --- 광고 소진 신호 (CLAW-138 후속) ---

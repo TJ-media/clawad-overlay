@@ -8,6 +8,7 @@
   const text = document.getElementById("text");
   const brand = document.getElementById("brand");
   const reward = document.getElementById("reward");
+  const noticeDismiss = document.getElementById("notice-dismiss");
   let linked = false;
 
   // 예상 포인트가 1 오를 때 숫자가 툭 튀지 않게 0.1씩 굴려 올린다 (CLAW-138 후속).
@@ -170,12 +171,17 @@
       strip.classList.remove("visible", "linked", "notice");
       text.textContent = "";
       brand.textContent = "";
+      noticeDismiss.hidden = true;
       renderReward(null);
       linked = false;
       return;
     }
     text.textContent = ad.text;
     brand.textContent = typeof ad.brand === "string" && ad.brand ? ad.brand : "";
+    const canDismiss = ad.kind === "notice" && ad.dismissible === true
+      && typeof ad.dismissLabel === "string" && ad.dismissLabel.length > 0;
+    noticeDismiss.textContent = canDismiss ? ad.dismissLabel : "";
+    noticeDismiss.hidden = !canDismiss;
     renderReward(ad.reward);
     // 광고일 때만 [광고]를 단다. kind가 빠져 있으면 광고로 본다 — 표기가 빠지는 쪽이 아니라
     // 붙는 쪽으로 기울여야 안전하다 (CLAUDE.md §4).
@@ -192,6 +198,12 @@
   strip.addEventListener("click", () => {
     if (!linked || !window.clawadAdAPI || typeof window.clawadAdAPI.openAd !== "function") return;
     window.clawadAdAPI.openAd();
+  });
+
+  noticeDismiss.addEventListener("click", (event) => {
+    event.stopPropagation();
+    if (noticeDismiss.hidden || !window.clawadAdAPI || typeof window.clawadAdAPI.dismissNotice !== "function") return;
+    window.clawadAdAPI.dismissNotice();
   });
 
   if (window.clawadAdAPI && typeof window.clawadAdAPI.onAd === "function") {

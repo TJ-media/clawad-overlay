@@ -157,6 +157,46 @@ describe("광고 일시중지 메뉴 항목 (CLAW-89)", () => {
   });
 });
 
+describe("안내 숨김 메뉴 항목 (CLAW-163)", () => {
+  it("트레이와 펫 메뉴에서 광고 일시중지 바로 다음에 안내 숨김을 토글한다", () => {
+    const initMenu = loadMenuWithElectron(fakeElectron());
+    let toggles = 0;
+    const ctx = buildBaseCtx({
+      clawadAdsAvailable: true,
+      clawadAdsPaused: false,
+      toggleClawadAds: () => {},
+      clawadNoticesAvailable: true,
+      clawadNoticesHidden: false,
+      toggleClawadNotices: () => { toggles += 1; },
+    });
+
+    const tray = trayLabels(ctx, initMenu);
+    const pauseIndex = tray.labels.indexOf("Pause Ads");
+    assert.strictEqual(tray.labels[pauseIndex + 1], "Hide Notices");
+
+    initMenu(ctx).buildContextMenu();
+    const contextLabels = ctx.contextMenu.template.map((item) => item.label);
+    const contextPauseIndex = contextLabels.indexOf("Pause Ads");
+    assert.strictEqual(contextLabels[contextPauseIndex + 1], "Hide Notices");
+
+    tray.template[pauseIndex + 1].click();
+    assert.strictEqual(toggles, 1);
+  });
+
+  it("숨긴 상태에서는 다시 켜기 라벨을 보여준다", () => {
+    const initMenu = loadMenuWithElectron(fakeElectron());
+    const ctx = buildBaseCtx({
+      clawadNoticesAvailable: true,
+      clawadNoticesHidden: true,
+      toggleClawadNotices: () => {},
+    });
+
+    const { labels } = trayLabels(ctx, initMenu);
+    assert.ok(labels.includes("Show Notices"));
+    assert.ok(!labels.includes("Hide Notices"));
+  });
+});
+
 describe("광고 일시중지 라벨 로케일 (CLAW-89)", () => {
   it("지원 언어 5종 모두에 라벨이 있다 — i18n은 폴백 없이 키를 그대로 노출한다", () => {
     const { i18n, SUPPORTED_LANGS } = require("../src/i18n");
@@ -166,6 +206,19 @@ describe("광고 일시중지 라벨 로케일 (CLAW-89)", () => {
       assert.ok(dict.resumeAds && dict.resumeAds !== "resumeAds", `${lang}: resumeAds 라벨 필요`);
     }
     assert.strictEqual(i18n.ko.pauseAds, "광고 일시중지");
+  });
+});
+
+describe("안내 숨김 라벨 로케일 (CLAW-163)", () => {
+  it("지원 언어 5종 모두에 숨김·다시 켜기 라벨이 있다", () => {
+    const { i18n, SUPPORTED_LANGS } = require("../src/i18n");
+    for (const lang of SUPPORTED_LANGS) {
+      const dict = i18n[lang];
+      assert.ok(dict.hideNotices && dict.hideNotices !== "hideNotices", `${lang}: hideNotices 라벨 필요`);
+      assert.ok(dict.showNotices && dict.showNotices !== "showNotices", `${lang}: showNotices 라벨 필요`);
+    }
+    assert.strictEqual(i18n.ko.hideNotices, "안내 끄기");
+    assert.strictEqual(i18n.ko.showNotices, "안내 다시 켜기");
   });
 });
 
@@ -193,5 +246,63 @@ describe("광고 일시중지 prefs (CLAW-89)", () => {
     assert.strictEqual(loaded.snapshot.clawadAdsPaused, true, "BOM 때문에 일시중지가 풀리면 안 된다");
     assert.strictEqual(loaded.snapshot.lang, "ko");
     assert.strictEqual(fs.existsSync(`${file}.bak`), false, "정상 파일을 손상으로 취급해 백업하지 않는다");
+  });
+});
+
+describe("안내 숨김 prefs (CLAW-163)", () => {
+  it("스키마에 독립된 boolean 설정이 있고 기본값은 안내 표시다", () => {
+    const { SCHEMA, SCHEMA_KEYS, getDefaults } = require("../src/prefs");
+    assert.ok(SCHEMA_KEYS.includes("clawadNoticesHidden"));
+    assert.strictEqual(SCHEMA.clawadNoticesHidden.type, "boolean");
+    assert.strictEqual(getDefaults().clawadNoticesHidden, false);
+  });
+});
+
+describe("리워드샵 메뉴 항목 (CLAW-166)", () => {
+  it("트레이와 컨텍스트 메뉴에서 안내 설정 다음에 리워드샵을 연다", () => {
+    const initMenu = loadMenuWithElectron(fakeElectron());
+    let opens = 0;
+    const ctx = buildBaseCtx({
+      clawadNoticesAvailable: true,
+      clawadNoticesHidden: false,
+      toggleClawadNotices: () => {},
+      clawadRewardShopUrl: "https://clawad.whatsup.house/",
+      openClawadRewardShop: () => { opens += 1; },
+    });
+
+    const tray = trayLabels(ctx, initMenu);
+    const noticeIndex = tray.labels.indexOf("Hide Notices");
+    assert.strictEqual(tray.labels[noticeIndex + 1], "Open Reward Shop");
+    tray.template[noticeIndex + 1].click();
+    assert.strictEqual(opens, 1);
+
+    initMenu(ctx).buildContextMenu();
+    const contextLabels = ctx.contextMenu.template.map((item) => item.label);
+    const contextNoticeIndex = contextLabels.indexOf("Hide Notices");
+    assert.strictEqual(contextLabels[contextNoticeIndex + 1], "Open Reward Shop");
+  });
+
+  it("정책에 유효한 URL이 없으면 리워드샵 메뉴만 숨긴다", () => {
+    const initMenu = loadMenuWithElectron(fakeElectron());
+    const ctx = buildBaseCtx({
+      clawadRewardShopUrl: null,
+      openClawadRewardShop: () => {},
+    });
+
+    const { labels } = trayLabels(ctx, initMenu);
+    assert.ok(!labels.includes("Open Reward Shop"));
+    initMenu(ctx).buildContextMenu();
+    assert.ok(!ctx.contextMenu.template.some((item) => item.label === "Open Reward Shop"));
+  });
+});
+
+describe("리워드샵 메뉴 로케일 (CLAW-166)", () => {
+  it("지원 언어 5종 모두 리워드샵 열기 라벨이 있다", () => {
+    const { i18n, SUPPORTED_LANGS } = require("../src/i18n");
+    for (const lang of SUPPORTED_LANGS) {
+      const dict = i18n[lang];
+      assert.ok(dict.openRewardShop && dict.openRewardShop !== "openRewardShop", `${lang}: openRewardShop 라벨 필요`);
+    }
+    assert.strictEqual(i18n.ko.openRewardShop, "리워드샵 열기");
   });
 });

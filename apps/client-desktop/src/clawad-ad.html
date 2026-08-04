@@ -87,6 +87,8 @@
         line-height: 1.2;
       }
 
+      [hidden] { display: none !important; }
+
       #strip.visible { opacity: 1; }
 
       /* 링크가 있는 광고만 클릭을 받는다. 없으면 창 전체가 클릭을 통과한다. */
@@ -163,6 +165,22 @@
 
       #reward:empty { display: none; }
 
+      #notice-dismiss {
+        flex: 0 0 auto;
+        margin-right: auto;
+        padding: 1px 5px;
+        border: 0;
+        border-radius: 4px;
+        background: var(--badge-bg);
+        color: var(--text-muted);
+        font: inherit;
+        font-weight: 600;
+        line-height: 1.2;
+        cursor: pointer;
+      }
+
+      #notice-dismiss:hover { background: var(--hover-bg); }
+
       /* 링크 표식. 클릭 가능한 광고에만 보인다. */
       #open {
         flex: 0 0 auto;
@@ -182,6 +200,7 @@
         <span id="text"></span>
       </div>
       <div id="row2">
+        <button id="notice-dismiss" type="button" hidden></button>
         <span id="brand"></span>
         <span id="reward"></span>
         <span id="open" aria-hidden="true">↗</span>
