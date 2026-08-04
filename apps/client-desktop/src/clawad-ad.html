@@ -71,10 +71,13 @@
       #row1,
       #row2 {
         display: flex;
-        align-items: center;
         gap: 8px;
         min-width: 0;
       }
+
+      /* 문구가 두 줄이 되면 [광고] 배지는 가운데가 아니라 **첫 줄**에 붙어야 한다 (CLAW-162). */
+      #row1 { align-items: flex-start; }
+      #row2 { align-items: center; }
 
       /* 2행은 오른쪽 정렬. 1행 문구는 왼쪽에서 흐르고 2행 부가정보는 오른쪽 끝에 모인다. */
       #row2 {
@@ -111,13 +114,25 @@
       #strip.notice #label { display: none; }
       #strip.notice #notice-label { display: inline; }
 
+      /* 광고 문구는 두 줄까지 쓴다 (CLAW-162). 정책 상한(maxWidthPx 420)이 운영 소재보다
+         좁아서 한 줄로는 34자짜리도 전부 말줄임됐다 — 폭을 키워 화면을 더 차지하는 대신
+         세로를 한 줄 내준다. 두 줄이면 약 64자라 현재 인벤토리(최장 47자)가 다 들어간다.
+
+         line-clamp는 `display: -webkit-box`를 요구하므로 flex 자식으로 두지 않는다.
+         줄 수를 넘길 때만 말줄임이 붙는다 — 짧은 문구는 전문이 그대로 보인다.
+         line-height를 고정하는 이유는 메인의 창 높이 상수가 이 값을 전제로 계산되기 때문이다. */
       #text {
         flex: 1 1 auto;
         min-width: 0;
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
         overflow: hidden;
-        white-space: nowrap;
-        text-overflow: ellipsis;
+        line-height: 17px;
       }
+
+      /* 안내 문구는 무조건 한 줄이다. 광고가 아니라 자리 채움이라 세로를 더 쓰지 않는다. */
+      #strip.notice #text { -webkit-line-clamp: 1; }
 
       /* 누를 수 있는 표시는 문구에 밑줄을 둔다. ↗만으로는 눌리는 줄 모른다는 피드백. */
       #strip.linked #text {
