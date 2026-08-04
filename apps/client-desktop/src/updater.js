@@ -94,10 +94,10 @@ function findWindowsArm64InstallerAsset(release) {
   }) || null;
 }
 
-// 갱신을 clawad에 맡기는 경로 (CLAW-160, 계약 §3.5).
+// 검증된 설치 포인터를 통해 갱신을 clawad에 맡기는 경로 (CLAW-167).
 const { resolveSiblingCommand } = require("./clawad-cli-bridge");
 
-const OVERLAY_UPDATE_SCRIPT = "overlay-update.js";
+const CLI_UPDATE_SCRIPT = "update.js";
 
 function initUpdater(ctx, deps = {}) {
   const app = deps.app || electron.app;
@@ -130,6 +130,7 @@ function initUpdater(ctx, deps = {}) {
   let pendingUpdateVersion = "";
   let pendingUpdateRelease = null;
   let pendingPromptDeferred = null;
+  const delegatedCliVersions = new Set();
 
   function isManualCheck() {
     return !!activeCheck && activeCheck.trigger === "manual";
@@ -1040,14 +1041,12 @@ function initUpdater(ctx, deps = {}) {
     return schedulerRunning;
   }
 
-  /**
-   * clawad에 갱신을 맡긴다. 완료를 기다리지 않는다 — 우리가 꺼져야 저쪽이 교체를 시작한다.
-   * 계약 §3.3의 검사를 통과한 포인터에서만 스크립트를 끌어낸다(임의 경로 실행 금지).
-   */
-  function startOverlayUpdate() {
+  /** 검증된 설치 포인터의 형제 update.js로 CLI 갱신을 시작한다. */
+  function startClawadUpdate(version = "") {
+    if (version && delegatedCliVersions.has(version)) return { status: "duplicate" };
     let command;
     try {
-      command = resolveSiblingCommand(OVERLAY_UPDATE_SCRIPT, {
+      command = resolveSiblingCommand(CLI_UPDATE_SCRIPT, {
         dataDir: deps.clawadDataDir,
         env: deps.env || process.env,
       });
@@ -1060,10 +1059,11 @@ function initUpdater(ctx, deps = {}) {
       const child = spawn(command.node, [command.script], {
         stdio: "ignore",
         windowsHide: true,
-        // 우리가 죽어도 살아남아야 교체를 끝낼 수 있다.
         detached: true,
       });
-      child.on("error", () => {});
+      if (version) delegatedCliVersions.add(version);
+      child.on("error", (err) => log(`clawad update failed to start: ${getErrorMessage(err)}`));
+      child.on("exit", (code) => log(`clawad update exited: ${code}`));
       child.unref();
       return { status: "started" };
     } catch (err) {
@@ -1111,8 +1111,8 @@ function initUpdater(ctx, deps = {}) {
           // 실행을 막는다. clawad가 Node로 받아 ditto로 풀면 애초에 붙지 않는다 (계약 §3.5).
           // 실행 중인 앱이 자기를 교체하는 문제도 함께 피한다 — 교체 주체가 밖에 있으면
           // 실패해도 구 버전을 되돌릴 수 있다.
-          const delegated = startOverlayUpdate();
-          if (delegated.status === "started") {
+          const delegated = startClawadUpdate(info.version);
+          if (delegated.status === "started" || delegated.status === "duplicate") {
             updateStatus = "idle";
             clearActiveCheck();
             rebuildMenus();
@@ -1145,6 +1145,7 @@ function initUpdater(ctx, deps = {}) {
           return;
         }
 
+        startClawadUpdate(info.version);
         updateStatus = "downloading";
         setOverlay("downloading");
         rebuildMenus();
@@ -1401,8 +1402,8 @@ function initUpdater(ctx, deps = {}) {
   return {
     setupAutoUpdater,
     checkForUpdates,
-    // CLAW-160: 갱신을 clawad에 넘기는 경로. 분리 실행 여부가 핵심이라 테스트에서 직접 확인한다.
-    startOverlayUpdate,
+    // CLAW-167: 검증된 clawad 설치본의 CLI 갱신을 분리 실행한다.
+    startClawadUpdate,
     getUpdateMenuItem,
     getUpdateMenuLabel,
     // ── #329 scheduler hooks (Phase 2+3) ──
