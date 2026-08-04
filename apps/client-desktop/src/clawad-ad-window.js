@@ -15,7 +15,7 @@ const { ADS_EXHAUSTED_NOTICE, LOGIN_NOTICE, rotatingNotice } = require("./clawad
 const clawadSurfaceLock = require("./clawad-surface-lock");
 const { keepOutOfTaskbar } = require("./taskbar");
 // 폭 결정은 순수 함수로 분리해 Electron 없이 검증한다 (CLAW-156).
-const { clampWidth, shouldAdopt } = require("./clawad-ad-width");
+const { NOTICE_STRIP_HEIGHT, clampWidth, shouldAdopt, stripHeight } = require("./clawad-ad-width");
 
 const isMac = process.platform === "darwin";
 const isWin = process.platform === "win32";
@@ -29,7 +29,14 @@ const TICK_MS = 1000;
  * 실측값이다 — 행 높이는 폰트 스택의 line-height에 달려 있어 줄이면 2행이 잘린다.
  * body 여백은 세션 HUD와 같은 값(2px/8px)이라 두 패널이 같은 자리에 같은 크기로 앉는다.
  */
-const STRIP_HEIGHT = 55;
+/**
+ * 기본(한 줄) 패널 높이. 실제 높이 판단은 stripHeight가 한다 (CLAW-162).
+ *
+ * 짧은 광고도 두 줄 높이로 뜨지만 `#strip`이 세로 가운데 정렬이라 여백으로 보인다 —
+ * 내용에 맞춰 높이까지 줄이려면 렌더러가 높이를 재서 보고해야 하는데, 폭과 달리
+ * 스트립이 `height: 100%`라 창 크기에 되먹임이 생긴다. 별도 설계가 필요해 후속으로 둔다.
+ */
+const STRIP_HEIGHT = NOTICE_STRIP_HEIGHT;
 /** 펫과 광고 줄 사이 여백. */
 const PET_GAP = 6;
 /**
@@ -61,12 +68,13 @@ module.exports = function initClawadAdWindow(ctx) {
     return typeof ctx.getTextScale === "function" ? ctx.getTextScale() : 1;
   }
 
-  function computeBounds(maxWidthPx) {
+  function computeBounds(payload) {
     const petBounds = typeof ctx.getPetWindowBounds === "function" ? ctx.getPetWindowBounds() : null;
     if (!petBounds) return null;
     const scale = getScale();
-    const width = scaled(clampWidth(contentWidthPx, maxWidthPx), scale);
-    const height = scaled(STRIP_HEIGHT, scale);
+    const width = scaled(clampWidth(contentWidthPx, payload.maxWidthPx), scale);
+    // 광고만 두 줄을 쓴다. 안내·로그인은 한 줄이라 기존 높이 그대로다 (CLAW-162).
+    const height = scaled(stripHeight(payload.kind), scale);
     const centerX = petBounds.x + Math.round(petBounds.width / 2);
     const centerY = petBounds.y + Math.round(petBounds.height / 2);
     const workArea = typeof ctx.getNearestWorkArea === "function"
@@ -233,8 +241,8 @@ module.exports = function initClawadAdWindow(ctx) {
     }
   }
 
-  function applyBounds(win, maxWidthPx) {
-    const bounds = computeBounds(maxWidthPx);
+  function applyBounds(win, payload) {
+    const bounds = computeBounds(payload);
     if (!bounds) return;
     // 매 tick마다 같은 값을 다시 넣으면 창이 깜빡인다. 바뀔 때만 적용한다.
     if (lastBounds && lastBounds.x === bounds.x && lastBounds.y === bounds.y
@@ -247,7 +255,7 @@ module.exports = function initClawadAdWindow(ctx) {
     lastPayload = payload;
     const win = ensureWindow();
     if (!win || win.isDestroyed()) return;
-    applyBounds(win, payload.maxWidthPx);
+    applyBounds(win, payload);
     applyClickable(win, payload.kind === "login" || Boolean(payload.clickUrl));
     send(payload);
     if (!win.isVisible()) {
@@ -331,7 +339,7 @@ module.exports = function initClawadAdWindow(ctx) {
         const next = Math.ceil(px);
         if (!shouldAdopt(next, contentWidthPx)) return;
         contentWidthPx = next;
-        if (lastPayload) applyBounds(adWindow, lastPayload.maxWidthPx);
+        if (lastPayload) applyBounds(adWindow, lastPayload);
       });
       ipcBound = true;
     }
