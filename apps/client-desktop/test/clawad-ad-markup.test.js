@@ -27,3 +27,11 @@ test("안내 끄기는 배지 대신 밑줄 버튼이다", () => {
   assert.match(html, /#notice-dismiss:focus-visible/);
   assert.match(html, /<button id="notice-dismiss" type="button" hidden><\/button>/);
 });
+
+test("광고판은 3열 2행 Grid에서 본문과 metadata가 둘째 행을 공유한다", () => {
+  assert.match(html, /#strip\s*\{[^}]*display:\s*grid[^}]*grid-template-columns:\s*auto minmax\(0, 1fr\) auto[^}]*grid-template-rows:\s*repeat\(2, 17px\)/s);
+  assert.match(html, /#text\s*\{[^}]*grid-column:\s*2[^}]*grid-row:\s*1\s*\/\s*span 2/s);
+  assert.match(html, /#meta\s*\{[^}]*grid-column:\s*3[^}]*grid-row:\s*2/s);
+  assert.match(html, /#notice-dismiss\s*\{[^}]*grid-column:\s*2[^}]*grid-row:\s*2/s);
+  assert.match(html, /<div id="meta">\s*<span id="brand"><\/span>\s*<span id="reward"><\/span>/s);
+});

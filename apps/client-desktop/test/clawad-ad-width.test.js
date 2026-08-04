@@ -9,7 +9,6 @@ const {
   AD_WIDTH_STEP_PX,
   AD_STRIP_HEIGHT,
   NOTICE_STRIP_HEIGHT,
-  TEXT_LINE_HEIGHT,
   clampWidth,
   shouldAdopt,
   stripHeight,
@@ -65,21 +64,11 @@ test("측정값이 쓰레기면 채택하지 않는다", () => {
   }
 });
 
-// --- 표시 종류별 패널 높이 (CLAW-162) ---
+// --- 표시 종류별 패널 높이 (CLAW-169) ---
 
-// 정책 상한(420px)이 운영 소재보다 좁아 한 줄로는 짧은 문구까지 전부 말줄임됐다.
-// 폭을 키우는 대신 광고에만 세로 한 줄을 내준다.
-test("광고는 문구 두 줄만큼 높고, 안내·로그인은 한 줄 그대로다 (CLAW-162)", () => {
-  assert.strictEqual(stripHeight("ad"), AD_STRIP_HEIGHT);
-  assert.strictEqual(stripHeight("notice"), NOTICE_STRIP_HEIGHT);
-  assert.strictEqual(stripHeight("login"), NOTICE_STRIP_HEIGHT);
-  // 늘어난 만큼은 정확히 문구 한 줄이다 — 더 잡으면 짧은 광고에 빈 칸이 생긴다.
-  assert.strictEqual(AD_STRIP_HEIGHT - NOTICE_STRIP_HEIGHT, TEXT_LINE_HEIGHT);
-});
-
-// 구 payload에는 kind가 없다. 그때 광고로 보면 안내에까지 두 줄 높이를 잡아 빈 칸이 생긴다.
-test("kind를 모르면 한 줄 높이로 보수적으로 간다 (CLAW-162)", () => {
-  for (const unknown of [undefined, null, "", "ADVERTISEMENT", 0]) {
-    assert.strictEqual(stripHeight(unknown), NOTICE_STRIP_HEIGHT, `${JSON.stringify(unknown)}`);
+test("광고·안내·로그인은 모두 같은 두 행 높이를 쓴다", () => {
+  for (const kind of ["ad", "notice", "login", undefined]) {
+    assert.strictEqual(stripHeight(kind), NOTICE_STRIP_HEIGHT);
   }
+  assert.strictEqual(AD_STRIP_HEIGHT, NOTICE_STRIP_HEIGHT);
 });
