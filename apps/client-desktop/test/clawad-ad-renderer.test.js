@@ -8,7 +8,7 @@ const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const path = require("node:path");
 
-const IDS = ["strip", "text", "brand", "reward", "open", "label", "notice-label", "notice-dismiss"];
+const IDS = ["strip", "text", "meta", "brand", "reward", "open", "label", "notice-label", "notice-dismiss"];
 
 /** 렌더러를 새 DOM 위에 올리고 render 함수를 돌려준다. */
 function mountRenderer() {

@@ -16,7 +16,7 @@ const NODE = "/usr/local/bin/node";
 const INSTALL_DIR = path.join("/opt", "clawad", "client");
 
 function deps(pointer, { existing } = {}) {
-  const present = new Set(existing || [NODE, path.join(INSTALL_DIR, "overlay-update.js")]);
+  const present = new Set(existing || [NODE, path.join(INSTALL_DIR, "update.js")]);
   return {
     dataDir: "/tmp/clawad-data",
     readJson: () => pointer,
@@ -35,8 +35,8 @@ function validPointer(extra = {}) {
 }
 
 test("형제 스크립트를 끌어낸다", () => {
-  const command = resolveSiblingCommand("overlay-update.js", deps(validPointer()));
-  assert.deepStrictEqual(command, { node: NODE, script: path.join(INSTALL_DIR, "overlay-update.js") });
+  const command = resolveSiblingCommand("update.js", deps(validPointer()));
+  assert.deepStrictEqual(command, { node: NODE, script: path.join(INSTALL_DIR, "update.js") });
 });
 
 test("script 파일명이 overlay-events.js가 아니면 실행하지 않는다 — 임의 경로 실행 금지 (§3.3)", () => {
@@ -62,9 +62,9 @@ test("node·script가 문자열이 아니면 null", () => {
   }
 });
 
-test("가리키는 파일이 실제로 없으면 null — 구 CLI에는 overlay-update.js가 없다", () => {
+test("가리키는 파일이 실제로 없으면 null — 구 CLI에는 update.js가 없다", () => {
   // node는 있지만 갱신 스크립트가 없는 설치본.
-  const command = resolveSiblingCommand("overlay-update.js", deps(validPointer(), { existing: [NODE] }));
+  const command = resolveSiblingCommand("update.js", deps(validPointer(), { existing: [NODE] }));
   assert.strictEqual(command, null);
 });
 

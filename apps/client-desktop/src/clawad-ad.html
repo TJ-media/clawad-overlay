@@ -50,10 +50,12 @@
       body { padding: 2px 3px 8px; }
 
       #strip {
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-        gap: 2px;
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        grid-template-rows: repeat(2, 17px);
+        column-gap: 8px;
+        row-gap: 2px;
+        align-items: start;
         width: 100%;
         height: 100%;
         /* 좌우 10px·항목 간격 8px은 세션 HUD의 .row와 같은 값이다. */
@@ -66,24 +68,24 @@
         transition: opacity 160ms ease-out, background 100ms ease;
       }
 
-      /* 2행 구조 (CLAW-138): 1행은 [광고]+문구, 2행은 광고주·적립 현황.
-         좁은 폭에서 답답해 보이지 않게 행 간격은 2px만 두고 2행을 한 단계 작게 쓴다. */
-      #row1,
-      #row2 {
-        display: flex;
-        gap: 8px;
-        min-width: 0;
+      /* 3열 2행 구조 (CLAW-169): 본문 두 번째 줄과 광고주·적립 현황이 둘째 행을 공유한다. */
+      #label,
+      #notice-label {
+        grid-column: 1;
+        grid-row: 1;
+        align-self: start;
       }
 
-      /* 문구가 두 줄이 되면 [광고] 배지는 가운데가 아니라 **첫 줄**에 붙어야 한다 (CLAW-162). */
-      #row1 { align-items: flex-start; }
-      #row2 { align-items: center; }
-
-      /* 2행은 오른쪽 정렬. 1행 문구는 왼쪽에서 흐르고 2행 부가정보는 오른쪽 끝에 모인다. */
-      #row2 {
+      #meta {
+        grid-column: 3;
+        grid-row: 2;
+        display: flex;
+        align-items: center;
         justify-content: flex-end;
-        font-size: 11px;
+        gap: 0;
+        min-width: 0;
         color: var(--text-muted);
+        font-size: 11px;
         line-height: 1.2;
       }
 
@@ -100,13 +102,20 @@
       #label,
       #notice-label {
         flex: 0 0 auto;
-        padding: 1px 5px;
-        border-radius: 4px;
-        background: var(--badge-bg);
-        color: var(--text-muted);
-        font-size: 11px;
-        font-weight: 600;
-        letter-spacing: -0.2px;
+        padding: 2px 5px;
+        border-radius: 3px;
+        font-size: 10px;
+        font-weight: 500;
+        line-height: 1;
+        white-space: nowrap;
+      }
+
+      #label { background: rgba(245, 158, 11, 0.15); color: #b45309; }
+      #notice-label { background: rgba(22, 163, 74, 0.13); color: #16a34a; }
+
+      @media (prefers-color-scheme: dark) {
+        #label { background: rgba(245, 158, 11, 0.20); color: #fbbf24; }
+        #notice-label { background: rgba(22, 163, 74, 0.20); color: #4ade80; }
       }
 
       /* 광고가 아닌 안내를 띄울 때만 [안내]로 바꿔 단다. [광고] 텍스트 자체는 어떤 코드도
@@ -124,7 +133,8 @@
          줄 수를 넘길 때만 말줄임이 붙는다 — 짧은 문구는 전문이 그대로 보인다.
          line-height를 고정하는 이유는 메인의 창 높이 상수가 이 값을 전제로 계산되기 때문이다. */
       #text {
-        flex: 1 1 auto;
+        grid-column: 2;
+        grid-row: 1 / span 2;
         min-width: 0;
         display: -webkit-box;
         -webkit-box-orient: vertical;
@@ -166,20 +176,25 @@
       #reward:empty { display: none; }
 
       #notice-dismiss {
-        flex: 0 0 auto;
-        margin-right: auto;
-        padding: 1px 5px;
+        grid-column: 2;
+        grid-row: 2;
+        justify-self: start;
+        align-self: center;
+        padding: 0;
         border: 0;
-        border-radius: 4px;
-        background: var(--badge-bg);
+        background: transparent;
         color: var(--text-muted);
         font: inherit;
-        font-weight: 600;
-        line-height: 1.2;
+        text-decoration: underline;
+        text-underline-offset: 2px;
         cursor: pointer;
       }
 
-      #notice-dismiss:hover { background: var(--hover-bg); }
+      #notice-dismiss:hover,
+      #notice-dismiss:focus-visible {
+        color: var(--text);
+        text-decoration-thickness: 2px;
+      }
 
       /* 링크 표식. 클릭 가능한 광고에만 보인다. */
       #open {
@@ -194,13 +209,11 @@
   </head>
   <body>
     <div id="strip">
-      <div id="row1">
-        <span id="label">[광고]</span>
-        <span id="notice-label">[안내]</span>
-        <span id="text"></span>
-      </div>
-      <div id="row2">
-        <button id="notice-dismiss" type="button" hidden></button>
+      <span id="label">[광고]</span>
+      <span id="notice-label">[안내]</span>
+      <span id="text"></span>
+      <button id="notice-dismiss" type="button" hidden></button>
+      <div id="meta">
         <span id="brand"></span>
         <span id="reward"></span>
         <span id="open" aria-hidden="true">↗</span>
