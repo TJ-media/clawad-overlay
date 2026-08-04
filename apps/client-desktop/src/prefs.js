@@ -112,6 +112,8 @@ const SCHEMA = {
   // 광고 표시 일시중지 (CLAW-89). 규칙 §7이 요구하는 사용자 제어다 — 펫은 그대로 두고
   // 광고 표시와 적립만 멈춘다. 기본값은 off(광고 표시)이며 트레이 메뉴에서 토글한다.
   clawadAdsPaused: { type: "boolean", default: false },
+  // 광고와 독립된 로컬 안내 숨김(CLAW-163). 광고 표시·적립에는 영향을 주지 않는다.
+  clawadNoticesHidden: { type: "boolean", default: false },
   // Default off (macOS): a fresh install runs as an accessory/agent app — pet +
   // menu-bar icon, no Dock tile. Existing users keep their Dock — a persisted
   // showDock is kept (save() bakes the full snapshot), and the v11->v12 migration

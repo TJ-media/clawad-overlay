@@ -86,6 +86,7 @@ function readPolicyCache(dataDir) {
   const activity = cache.activity;
   const staleActiveMs = activity && activity.staleActiveMs !== undefined ? activity.staleActiveMs : 0;
   if (staleActiveMs !== 0 && !positiveInt(staleActiveMs)) return null;
+  const rewardShopUrl = safeClickUrl(cache.rewardShopUrl);
   return {
     adRotateMs: overlay.adRotateMs,
     adGapMs: overlay.adGapMs === undefined ? 0 : overlay.adGapMs,
@@ -93,6 +94,9 @@ function readPolicyCache(dataDir) {
     maxWidthPx: overlay.maxWidthPx,
     minViewMs: impression.minViewMs,
     staleActiveMs,
+    // 리워드샵은 선택 링크다(CLAW-166). 값이 없거나 https가 아니면 메뉴만 숨기고
+    // 광고 정책은 그대로 유효하게 둔다.
+    ...(rewardShopUrl ? { rewardShopUrl } : {}),
   };
 }
 
@@ -387,14 +391,13 @@ function createAdRuntime(options = {}) {
   }
 
   /**
-   * 광고 재고와 **무관하게** 지금 이 창을 띄워도 되는 맥락인가 (CLAW-138 후속).
-   * canRender와 달리 번들 유무를 보지 않는다 — 재고가 없을 때 안내 문구를 띄우기 위한 것이다.
-   * 안내도 광고와 같은 조건(정책 있음 + 작업 중)에서만 뜬다. 놀고 있을 때 띄우면 잔소리가 된다.
+   * 광고 재고와 **무관하게** 안내를 띄울 수 있는 맥락인가 (CLAW-138, CLAW-163).
+   * canRender와 달리 번들·작업 중 여부를 보지 않는다. 광고의 작업 중 게이트는 tick()에 그대로
+   * 남고, 안내만 유휴 상태에서도 보여 준다. 사용자가 끄는 선택은 메인 prefs가 별도로 다룬다.
    */
   function displayContext(now = Date.now()) {
     const policy = readPolicyCache(dataDir);
     if (!policy) return null;
-    if (!isWorkActive(dataDir, now, policy.idleThresholdMs, policy.staleActiveMs)) return null;
     return {
       maxWidthPx: policy.maxWidthPx,
       exhausted: readAdInventoryExhausted(dataDir),
@@ -405,6 +408,10 @@ function createAdRuntime(options = {}) {
   return {
     canRender,
     displayContext,
+    rewardShopUrl: () => {
+      const policy = readPolicyCache(dataDir);
+      return policy && policy.rewardShopUrl ? policy.rewardShopUrl : null;
+    },
     stop,
     tick,
     get dataDir() { return dataDir; },

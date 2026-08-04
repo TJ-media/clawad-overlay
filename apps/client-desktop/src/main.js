@@ -879,6 +879,7 @@ let isQuitting = false;
 // directly (writes go through ctx setters → controller.applyUpdate).
 let showTray = _settingsController.get("showTray");
 let clawadAdsPaused = _settingsController.get("clawadAdsPaused");
+let clawadNoticesHidden = _settingsController.get("clawadNoticesHidden");
 let showDock = _settingsController.get("showDock");
 let manageClaudeHooksAutomatically = _settingsController.get("manageClaudeHooksAutomatically");
 let autoStartWithClaude = _settingsController.get("autoStartWithClaude");
@@ -1064,6 +1065,52 @@ function applyClawadAdsPaused() {
 function toggleClawadAds() {
   // 쓰기는 항상 컨트롤러를 거친다. 미러 변수 갱신·prefs 저장·applyClawadAdsPaused가 그 경로에서 일어난다.
   _settingsController.applyUpdate("clawadAdsPaused", !clawadAdsPaused);
+}
+
+function clawadNoticesAvailable() {
+  try {
+    return _clawadAd.canShowNotices() || clawadNoticesHidden;
+  } catch {
+    return false;
+  }
+}
+
+function applyClawadNoticesHidden() {
+  try {
+    if (!clawadAdsPaused) _clawadAd.tick();
+  } catch (err) {
+    console.warn("ClawAd: failed to apply notice visibility:", err && err.message);
+  }
+  rebuildAllMenus();
+}
+
+function toggleClawadNotices() {
+  _settingsController.applyUpdate("clawadNoticesHidden", !clawadNoticesHidden);
+}
+
+function clawadRewardShopUrl() {
+  try {
+    return _clawadAd.rewardShopUrl();
+  } catch {
+    return null;
+  }
+}
+
+function openClawadRewardShop() {
+  const url = clawadRewardShopUrl();
+  if (!url) return false;
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:") return false;
+    const opening = shell.openExternal(parsed.href);
+    if (opening && typeof opening.catch === "function") {
+      opening.catch((err) => console.warn("ClawAd: failed to open reward shop:", err && err.message));
+    }
+    return true;
+  } catch (err) {
+    console.warn("ClawAd: failed to open reward shop:", err && err.message);
+    return false;
+  }
 }
 
 function sendToRenderer(channel, ...args) {
@@ -1997,6 +2044,9 @@ getQuotaRingWindow = _sessionHud.getQuotaRingWindow;
 const _clawadAd = require("./clawad-ad-window")({
   get win() { return win; },
   get petHidden() { return petWindowRuntime.isPetHidden(); },
+  get clawadNoticesHidden() { return clawadNoticesHidden; },
+  noticeDismissLabel: () => translate("hideNotices"),
+  toggleClawadNotices: () => toggleClawadNotices(),
   // 세션 목록이 열려 있으면 광고를 비켜준다 — 둘 다 펫 아래에 붙어서 겹친다.
   sessionHudVisible: () => {
     const hud = typeof getSessionHudWindow === "function" ? getSessionHudWindow() : null;
@@ -2308,6 +2358,11 @@ const _menuCtx = {
   get clawadAdsPaused() { return clawadAdsPaused; },
   get clawadAdsAvailable() { return clawadAdsAvailable(); },
   toggleClawadAds: () => toggleClawadAds(),
+  get clawadNoticesHidden() { return clawadNoticesHidden; },
+  get clawadNoticesAvailable() { return clawadNoticesAvailable(); },
+  toggleClawadNotices: () => toggleClawadNotices(),
+  get clawadRewardShopUrl() { return clawadRewardShopUrl(); },
+  openClawadRewardShop: () => openClawadRewardShop(),
   bringPetToPrimaryDisplay: () => bringPetToPrimaryDisplay(),
   get isQuitting() { return isQuitting; },
   set isQuitting(v) { isQuitting = v; },
@@ -2435,6 +2490,7 @@ const { t, buildContextMenu, buildTrayMenu, rebuildAllMenus, createTray,
 const SETTINGS_MIRROR_SETTERS = {
   lang: (v) => { lang = v; }, size: (v) => { currentSize = v; resetKeepSizeFrozen(); }, showTray: (v) => { showTray = v; },
   clawadAdsPaused: (v) => { clawadAdsPaused = v; applyClawadAdsPaused(); },
+  clawadNoticesHidden: (v) => { clawadNoticesHidden = v; applyClawadNoticesHidden(); },
   showDock: (v) => { showDock = v; if (macHideController) macHideController.noteManualChange(); }, manageClaudeHooksAutomatically: (v) => { manageClaudeHooksAutomatically = v; },
   autoStartWithClaude: (v) => { autoStartWithClaude = v; }, openAtLogin: (v) => { openAtLogin = v; },
   bubbleFollowPet: (v) => { bubbleFollowPet = v; }, sessionHudEnabled: (v) => { sessionHudEnabled = v; },

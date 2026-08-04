@@ -8,13 +8,15 @@ const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const path = require("node:path");
 
-const IDS = ["strip", "text", "brand", "reward", "open", "label", "notice-label"];
+const IDS = ["strip", "text", "brand", "reward", "open", "label", "notice-label", "notice-dismiss"];
 
 /** 렌더러를 새 DOM 위에 올리고 render 함수를 돌려준다. */
 function mountRenderer() {
   const nodes = new Map(IDS.map((id) => [id, {
     textContent: "",
+    hidden: false,
     classes: new Set(),
+    listeners: new Map(),
     // 폭 측정이 잠깐 바꿨다 되돌리는 값 (CLAW-156). 되돌렸는지 테스트가 확인한다.
     style: { flex: "", width: "" },
     // 실제 레이아웃이 없으므로 문구 길이에 비례하는 가짜 폭을 돌려준다.
@@ -24,13 +26,18 @@ function mountRenderer() {
       remove: (...names) => names.forEach((n) => nodes.get(id).classes.delete(n)),
       toggle: (name, on) => (on ? nodes.get(id).classes.add(name) : nodes.get(id).classes.delete(name)),
     },
-    addEventListener: () => {},
+    addEventListener(type, callback) { nodes.get(id).listeners.set(type, callback); },
+    click() {
+      const callback = nodes.get(id).listeners.get("click");
+      if (callback) callback({ stopPropagation: () => {} });
+    },
   }]));
 
   let render = null;
   const body = {};
   global.document = { getElementById: (id) => nodes.get(id) || null, body };
   const reported = [];
+  let dismissed = 0;
   global.window = {
     // clawad-ad.html의 `body { padding: 2px 3px 8px; }`와 같은 값. 창 폭은 스트립 바깥의
     // 이 여백까지 포함해야 한다 — 빼먹으면 문구가 길이와 무관하게 말줄임된다.
@@ -38,6 +45,7 @@ function mountRenderer() {
     clawadAdAPI: {
       onAd: (cb) => { render = cb; },
       openAd: () => {},
+      dismissNotice: () => { dismissed += 1; },
       reportWidth: (px) => reported.push(px),
     },
   };
@@ -47,7 +55,15 @@ function mountRenderer() {
   require(file);
 
   assert.ok(render, "렌더러가 onAd로 등록돼야 한다");
-  return { render, reward: nodes.get("reward"), strip: nodes.get("strip"), text: nodes.get("text"), reported };
+  return {
+    render,
+    reward: nodes.get("reward"),
+    strip: nodes.get("strip"),
+    text: nodes.get("text"),
+    noticeDismiss: nodes.get("notice-dismiss"),
+    dismissed: () => dismissed,
+    reported,
+  };
 }
 
 function ad(verifying, confirmed) {
@@ -274,4 +290,24 @@ test("광고를 숨길 때는 폭을 보고하지 않는다", (t) => {
   render(null);
 
   assert.deepStrictEqual(reported, []);
+});
+
+test("안내 끄기 버튼은 끌 수 있는 안내에만 보이고 별도 신호를 보낸다 (CLAW-163)", (t) => {
+  t.mock.timers.enable({ apis: ["setInterval"] });
+  const { render, noticeDismiss, dismissed } = mountRenderer();
+
+  render({
+    kind: "notice", text: "안내", brand: "", linked: false, reward: null,
+    dismissible: true, dismissLabel: "안내 끄기",
+  });
+  assert.strictEqual(noticeDismiss.hidden, false);
+  assert.strictEqual(noticeDismiss.textContent, "안내 끄기");
+  noticeDismiss.click();
+  assert.strictEqual(dismissed(), 1);
+
+  render(ad(1, 1));
+  assert.strictEqual(noticeDismiss.hidden, true, "광고에는 안내 끄기 버튼을 노출하지 않는다");
+
+  render({ kind: "login", text: "로그인", brand: "", linked: true, reward: null, dismissible: false });
+  assert.strictEqual(noticeDismiss.hidden, true, "로그인 안내는 기존 동작을 유지한다");
 });

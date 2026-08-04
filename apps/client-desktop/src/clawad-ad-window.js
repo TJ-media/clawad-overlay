@@ -149,6 +149,8 @@ module.exports = function initClawadAdWindow(ctx) {
         text: payload.text,
         brand: payload.brand,
         reward: payload.reward,
+        dismissible: payload.kind === "notice" && payload.dismissible === true,
+        dismissLabel: payload.kind === "notice" && typeof payload.dismissLabel === "string" ? payload.dismissLabel : "",
         linked: payload.kind === "login" || Boolean(payload.clickUrl),
       }
       : null);
@@ -170,6 +172,7 @@ module.exports = function initClawadAdWindow(ctx) {
     }
     const ad = runtime.tick(now);
     if (ad) return { ...ad, kind: "ad" };
+    if (ctx.clawadNoticesHidden) return null;
     const context = runtime.displayContext(now);
     if (!context) return null;
     return {
@@ -179,6 +182,8 @@ module.exports = function initClawadAdWindow(ctx) {
       // 오늘 광고를 다 본 상태일 때만 그 사실을 적는다. 오른쪽은 그대로 적립 현황이다.
       brand: context.exhausted ? ADS_EXHAUSTED_NOTICE : "",
       reward: context.reward,
+      dismissible: true,
+      dismissLabel: typeof ctx.noticeDismissLabel === "function" ? ctx.noticeDismissLabel() : "",
       clickUrl: null,
       maxWidthPx: context.maxWidthPx,
     };
@@ -256,7 +261,7 @@ module.exports = function initClawadAdWindow(ctx) {
     const win = ensureWindow();
     if (!win || win.isDestroyed()) return;
     applyBounds(win, payload);
-    applyClickable(win, payload.kind === "login" || Boolean(payload.clickUrl));
+    applyClickable(win, payload.kind === "login" || Boolean(payload.clickUrl) || payload.dismissible === true);
     send(payload);
     if (!win.isVisible()) {
       win.showInactive();
@@ -331,6 +336,13 @@ module.exports = function initClawadAdWindow(ctx) {
         if (event.sender !== adWindow.webContents) return;
         openCurrentAd();
       });
+      ipcMain.on("clawad-ad:dismiss-notice", (event) => {
+        if (!adWindow || adWindow.isDestroyed()) return;
+        if (event.sender !== adWindow.webContents) return;
+        if (!lastPayload || lastPayload.kind !== "notice" || lastPayload.dismissible !== true) return;
+        if (typeof ctx.toggleClawadNotices !== "function") return;
+        ctx.toggleClawadNotices();
+      });
       // 렌더러가 잰 내용 폭. 창이 곧 패널이라 짧은 광고에 창을 좁혀 준다 (CLAW-156).
       ipcMain.on("clawad-ad:width", (event, px) => {
         if (!adWindow || adWindow.isDestroyed()) return;
@@ -366,6 +378,7 @@ module.exports = function initClawadAdWindow(ctx) {
     releaseSurface();
     if (ipcBound) {
       ipcMain.removeAllListeners("clawad-ad:open");
+      ipcMain.removeAllListeners("clawad-ad:dismiss-notice");
       ipcBound = false;
     }
     lastPayload = null;
@@ -378,10 +391,12 @@ module.exports = function initClawadAdWindow(ctx) {
 
   return {
     canRender: (now) => runtime.canRender(now),
+    canShowNotices: (now) => Boolean(runtime.displayContext(now)),
     cleanup,
     getWindow: () => adWindow,
     openCurrentAd,
     reposition,
+    rewardShopUrl: () => runtime.rewardShopUrl(),
     start,
     tick,
   };

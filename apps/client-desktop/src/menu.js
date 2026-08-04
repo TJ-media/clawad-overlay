@@ -341,6 +341,18 @@ module.exports = function initMenu(ctx) {
         click: () => ctx.toggleClawadAds(),
       });
     }
+    if (typeof ctx.toggleClawadNotices === "function" && ctx.clawadNoticesAvailable) {
+      appGroup.push({
+        label: ctx.clawadNoticesHidden ? t("showNotices") : t("hideNotices"),
+        click: () => ctx.toggleClawadNotices(),
+      });
+    }
+    if (typeof ctx.openClawadRewardShop === "function" && ctx.clawadRewardShopUrl) {
+      appGroup.push({
+        label: t("openRewardShop"),
+        click: () => ctx.openClawadRewardShop(),
+      });
+    }
 
     const quitGroup = [
       { label: t("quit"), click: () => requestAppQuit() },
@@ -559,6 +571,18 @@ module.exports = function initMenu(ctx) {
       appGroup.push({
         label: ctx.clawadAdsPaused ? t("resumeAds") : t("pauseAds"),
         click: () => ctx.toggleClawadAds(),
+      });
+    }
+    if (typeof ctx.toggleClawadNotices === "function" && ctx.clawadNoticesAvailable) {
+      appGroup.push({
+        label: ctx.clawadNoticesHidden ? t("showNotices") : t("hideNotices"),
+        click: () => ctx.toggleClawadNotices(),
+      });
+    }
+    if (typeof ctx.openClawadRewardShop === "function" && ctx.clawadRewardShopUrl) {
+      appGroup.push({
+        label: t("openRewardShop"),
+        click: () => ctx.openClawadRewardShop(),
       });
     }
 
