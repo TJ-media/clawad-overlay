@@ -21,10 +21,11 @@
   // 멈춰 있었다 — 노출 주기가 18초쯤이라 0.3초 움직이고 17초 정지하는 꼴이었다. 갱신 간격을
   // 재서 그 시간에 걸쳐 굴리면 거의 항상 움직인다. sync 주기를 상수로 박지 않으므로 주기가
   // 바뀌어도 따라간다 (CLAW-157).
-  // 눈에 보이는 갱신 간격. 이 주기로 화면을 고치고, **한 번에 올릴 양을 거리에 맞춰 조절해**
-  // 아무리 먼 거리도 span 안에 끝나게 한다. 거리로 상한을 두면(예전 방식) 밀린 sync가 통째로
-  // 스냅돼 굴러가는 표시가 사라지고, 상한만 풀면 100P 점프가 100초씩 기어오른다.
-  const TWEEN_STEP_MS = 200;
+  /**
+   * 한 번에 0.1씩만 올리고 **간격**을 거리로 나눠 정한다 (CLAW-165). 이 값은 그 간격의 하한이다.
+   * 거리가 아주 멀 때(밀린 sync·교환 직후)만 여기에 걸리고, 그때는 증분을 키워 따라잡는다.
+   */
+  const TWEEN_MIN_STEP_MS = 120;
   /** 굴리는 데 쓸 시간의 하한·상한. 직전 갱신 간격을 이 범위로 자른다. */
   const TWEEN_MIN_SPAN_MS = 1000;
   const TWEEN_MAX_SPAN_MS = 240000;
@@ -50,9 +51,14 @@
   }
 
   /**
-   * `accrued`가 true면 굴러가는 값이 확정분을 **포함한** 적립 총액이다. 그때는 확정을 괄호로
-   * 묶어 두 수를 더하는 것으로 읽히지 않게 한다 — `예상 33.6P · 확정 33P`는 66.6P로 오독될
-   * 수 있다. 구 CLI(총액 없음)에서는 두 값이 서로 배타적이라 기존 표기를 유지한다.
+   * `accrued`가 true면 굴러가는 값이 확정분을 **포함한** 적립 총액이다. 그때는 확정을 따로 쓰지
+   * 않는다 (CLAW-165) — 적립이 거의 바로 확정으로 넘어가 두 수가 갈릴 때가 드물고, 나란히 쓰면
+   * `예상 33.6P · 확정 33P`가 66.6P로 오독된다. 총액 하나만 보여주는 쪽이 정확하고 짧다.
+   *
+   * 구 CLI(총액 없음)에서는 기존 표기를 유지한다. 그 조합의 굴러가는 값은 **검증 중**이라
+   * 그것만 띄우면 확정 잔액이 화면에서 사라진다 — 대개 0P라 오히려 오해를 만든다.
+   *
+   * 표기는 규칙 §9의 표준 용어 `예상 적립`을 쓴다. 화면 수익 표시가 "예상"임이 드러나야 한다(규칙 §2).
    */
   function paintReward(confirmed, accrued) {
     if (shownTenths === null) {
@@ -60,8 +66,11 @@
       return;
     }
     const shown = formatTenths(shownTenths);
-    const done = confirmed.toLocaleString("ko-KR");
-    reward.textContent = accrued ? `예상 ${shown}P (확정 ${done}P)` : `예상 ${shown}P · 확정 ${done}P`;
+    if (accrued) {
+      reward.textContent = `예상 적립 ${shown}P`;
+      return;
+    }
+    reward.textContent = `예상 적립 ${shown}P · 확정 ${confirmed.toLocaleString("ko-KR")}P`;
   }
 
   /**
@@ -104,12 +113,24 @@
     if (shownTenths === targetTenths || tweenTimer !== null) return;
     // 남은 거리를 직전 갱신 간격에 걸쳐 나눈다. 다음 갱신 전에 끝나도록 살짝 짧게 잡는다.
     const span = Math.min(TWEEN_MAX_SPAN_MS, Math.max(TWEEN_MIN_SPAN_MS, Math.floor(lastSpanMs * 0.9)));
-    const perStep = Math.max(1, Math.ceil((targetTenths - shownTenths) / Math.ceil(span / TWEEN_STEP_MS)));
+    const distance = targetTenths - shownTenths;
+    // 주유소 계기판처럼 0.1씩 고르게 올린다 (CLAW-165).
+    //
+    // 예전에는 **간격을 200ms로 고정**하고 증분만 거리에 맞춰 키웠다. 그런데 증분의 하한이 1이라
+    // 거리가 짧으면 간격이 늘어나지 않았다 — 노출당 0.3P = 3틱이면 600ms 만에 끝나고 다음 갱신까지
+    // 몇 분을 멈춰 있었다. CLAW-157이 고치려던 "굴렀다가 정지"가 짧은 거리에 그대로 남아 있었다.
+    //
+    // 그래서 반대로 잡는다: **증분을 0.1로 두고 간격을 거리로 나눈다.** 그러면 다음 갱신까지의
+    // 시간에 걸쳐 고르게 오른다. 느린 것은 상관없다 — 멈춰 보이지 않는 것이 목적이다.
+    const stepMs = Math.max(TWEEN_MIN_STEP_MS, Math.floor(span / distance));
+    // 간격이 하한에 걸릴 만큼 거리가 멀 때(밀린 sync·교환 직후)만 증분을 키워 span 안에 끝낸다.
+    // 이걸 빼면 100P 점프가 몇 시간씩 기어오른다.
+    const perStep = Math.max(1, Math.ceil(distance / Math.max(1, Math.floor(span / stepMs))));
     tweenTimer = setInterval(() => {
       shownTenths = Math.min(shownTenths + perStep, targetTenths);
       paintReward(confirmed, accrued);
       if (shownTenths >= targetTenths) stopTween();
-    }, TWEEN_STEP_MS);
+    }, stepMs);
   }
 
   /**
