@@ -19,6 +19,18 @@ const MIN_AD_WIDTH = 240;
 const AD_WIDTH_STEP_PX = 16;
 
 /**
+ * 안내 문구를 띄울 때의 창 폭 상한. 정책값 maxWidthPx는 광고 표시 폭이고, 미로그인 상태에는
+ * 정책 캐시 자체가 없다(정책은 sync가 받아오는데 sync는 로그인이 필요하다) — 안내에까지
+ * 정책값을 요구하면 로그인 안내를 영영 못 띄운다.
+ *
+ * **우리 안내 문구가 필요로 하는 폭보다 좁으면 안 된다.** 320px이던 동안
+ * "로그인하면 광고가 표시되고 리워드가 적립돼요!"(자연 폭 329px)가 항상 잘렸다 —
+ * 미로그인 사용자가 처음 보는 문구다. 실제 폭은 렌더러 실측값이 정하고 이 값은 상한일 뿐이라
+ * 광고 정책 기본값과 같은 자리에 둔다. clawad-ad-notices.test.js가 문구 길이를 여기에 맞춰 검사한다.
+ */
+const NOTICE_MAX_WIDTH = 420;
+
+/**
  * 실제로 쓸 논리 폭. 측정값이 없으면(첫 표시·구 렌더러) 상한을 그대로 쓴다 —
  * 좁아지지 않을 뿐 표시가 깨지지는 않는다.
  */
@@ -29,14 +41,23 @@ function clampWidth(contentWidthPx, maxWidthPx) {
 }
 
 /**
- * 새로 잰 폭을 채택할지. 첫 측정은 항상 채택하고, 이후에는 임계값을 넘을 때만 바꾼다.
+ * 새로 잰 폭을 채택할지. 첫 측정은 항상 채택한다.
  * 하한 이하로 내려가는 변화는 임계값과 무관하게 채택한다 — 하한에 붙여야 더 흔들리지 않는다.
+ *
+ * **임계값은 좁히는 변화에만 건다.** 넓히는 변화까지 막으면 창이 좁은 채로 남고, 창이 곧
+ * 패널이라 그만큼 문구가 말줄임된다 — 흔들림을 막으려다 글자를 잘라 먹는다. 실제로 안내 문구
+ * 회전(350 → 365px)이 임계값 16px에 1px 모자란 15px이라 거절돼, "작업하는 동안에만 광고가
+ * 표시되며 리워드가 적립돼요"가 회전마다 잘렸다. 문구 길이가 조금만 바뀌어도 재발하는 자리다.
+ *
+ * 좁히는 쪽만 남겨도 목적은 지켜진다: 넓힐 때는 어차피 내용이 그만큼 필요해서 넓히는 것이고,
+ * 좁힐 때는 안 좁혀도 표시가 깨지지 않으므로 참을 수 있다.
  */
 function shouldAdopt(nextPx, currentPx) {
   if (!Number.isFinite(nextPx) || nextPx <= 0) return false;
   if (!Number.isFinite(currentPx)) return true;
   if (nextPx <= MIN_AD_WIDTH) return currentPx > MIN_AD_WIDTH;
-  return Math.abs(nextPx - currentPx) >= AD_WIDTH_STEP_PX;
+  if (nextPx > currentPx) return true;
+  return currentPx - nextPx >= AD_WIDTH_STEP_PX;
 }
 
 /**
@@ -60,6 +81,7 @@ function stripHeight() {
 module.exports = {
   MIN_AD_WIDTH,
   AD_WIDTH_STEP_PX,
+  NOTICE_MAX_WIDTH,
   NOTICE_STRIP_HEIGHT,
   AD_STRIP_HEIGHT,
   TEXT_LINE_HEIGHT,
