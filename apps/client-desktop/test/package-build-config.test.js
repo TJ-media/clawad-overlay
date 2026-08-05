@@ -351,6 +351,26 @@ describe("package build config", () => {
       assert.ok(prereleaseIndex > actionIndex, "hyphenated tags should be marked prerelease");
     });
   });
+
+  // CLAW-155 — 사용자에게 보이는 경로에 포크 원본 이름이 돌아오지 못하게 하는 가드.
+  // Electron은 app.getName()을 최상위 productName → name 순으로 정하고, userData 디렉터리
+  // 이름이 거기서 파생된다. build.productName은 번들 이름에만 반영되므로 이것을 대신하지 못한다.
+  describe("app name derived paths", () => {
+    it("derives the runtime app name from a top-level productName", () => {
+      assert.strictEqual(
+        pkg.productName,
+        pkg.build.productName,
+        "top-level productName should match build.productName so the bundle and userData agree"
+      );
+    });
+
+    it("keeps the fork's original name out of the userData directory name", () => {
+      assert.ok(
+        !String(pkg.productName || "").includes("clawd-on-desk"),
+        "userData directory name must not expose the fork's original name"
+      );
+    });
+  });
 });
 
 function findWorkflowJobIndex(workflow, jobName) {
