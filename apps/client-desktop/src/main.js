@@ -1062,9 +1062,22 @@ function applyClawadAdsPaused() {
   rebuildAllMenus();
 }
 
+/**
+ * 쓰기는 항상 컨트롤러를 거친다. 미러 변수 갱신·prefs 저장·apply*가 그 경로에서 일어난다.
+ * 반환값을 반드시 확인한다 — applyUpdate는 던지지 않고 `{status:"error"}`를 돌려주므로,
+ * 그냥 호출만 하면 실패가 화면에도 로그에도 남지 않고 사라진다 (CLAW-170).
+ */
+function applyClawadToggle(key, next) {
+  const result = _settingsController.applyUpdate(key, next);
+  const report = (r) => {
+    if (r && r.status !== "ok") console.warn(`ClawAd: failed to toggle ${key}:`, r.message);
+  };
+  if (result && typeof result.then === "function") result.then(report, () => {});
+  else report(result);
+}
+
 function toggleClawadAds() {
-  // 쓰기는 항상 컨트롤러를 거친다. 미러 변수 갱신·prefs 저장·applyClawadAdsPaused가 그 경로에서 일어난다.
-  _settingsController.applyUpdate("clawadAdsPaused", !clawadAdsPaused);
+  applyClawadToggle("clawadAdsPaused", !clawadAdsPaused);
 }
 
 function clawadNoticesAvailable() {
@@ -1085,7 +1098,7 @@ function applyClawadNoticesHidden() {
 }
 
 function toggleClawadNotices() {
-  _settingsController.applyUpdate("clawadNoticesHidden", !clawadNoticesHidden);
+  applyClawadToggle("clawadNoticesHidden", !clawadNoticesHidden);
 }
 
 function clawadRewardShopUrl() {
