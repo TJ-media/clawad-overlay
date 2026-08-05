@@ -237,6 +237,11 @@ const updateRegistry = {
   codexHookHealthLastNotified: requireString("codexHookHealthLastNotified", { allowEmpty: true }),
   lowPowerIdleMode: requireBoolean("lowPowerIdleMode"),
   keepAwakeWhileWorking: requireBoolean("keepAwakeWhileWorking"),
+  // 규칙 §7이 요구하는 사용자 제어다 (CLAW-89 일시중지, CLAW-163 안내 숨김). 여기에 엔트리가
+  // 없으면 applyUpdate가 "unknown settings key"로 거절하고, 호출부가 반환값을 보지 않아
+  // 메뉴·버튼이 조용히 무반응이 된다 — 실제로 그렇게 죽어 있었다 (CLAW-170).
+  clawadAdsPaused: requireBoolean("clawadAdsPaused"),
+  clawadNoticesHidden: requireBoolean("clawadNoticesHidden"),
   petTint(value) {
     if (!value || typeof value !== "object" || Array.isArray(value)) {
       return { status: "error", message: "petTint must be a theme-to-tint object" };

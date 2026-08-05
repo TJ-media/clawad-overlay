@@ -2386,6 +2386,16 @@ describe("setTextScaleForDisplay command", () => {
   });
 });
 
+// prefs 스키마에만 키를 넣고 updateRegistry를 빼먹으면 applyUpdate가 "unknown settings key"로
+// 거절한다. 값은 저장·복원되는데 사용자가 바꿀 수는 없는 설정이 되고, 호출부가 반환값을 보지
+// 않으면 메뉴·버튼이 조용히 무반응이 된다 — 실제로 두 키가 그렇게 죽어 있었다 (CLAW-170).
+describe("updateRegistry가 prefs 스키마를 전부 덮는다 (CLAW-170)", () => {
+  it("스키마 키마다 검증자가 있다", () => {
+    const missing = prefs.SCHEMA_KEYS.filter((key) => !updateRegistry[key]);
+    assert.deepStrictEqual(missing, [], `updateRegistry에 빠진 키: ${missing.join(", ")}`);
+  });
+});
+
 describe("version validator", () => {
   it("accepts the current version", () => {
     const r = updateRegistry.version(prefs.CURRENT_VERSION, { snapshot: prefs.getDefaults() });
