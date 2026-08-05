@@ -36,6 +36,19 @@ test("광고판은 3열 2행 Grid에서 본문과 metadata가 둘째 행을 공�
   assert.match(html, /#strip\s*\{[^}]*display:\s*grid[^}]*grid-template-columns:\s*auto minmax\(0, 1fr\) auto[^}]*grid-template-rows:\s*repeat\(2, 17px\)/s);
   assert.match(html, /#text\s*\{[^}]*grid-column:\s*2[^}]*grid-row:\s*1\s*\/\s*span 2/s);
   assert.match(html, /#meta\s*\{[^}]*grid-column:\s*3[^}]*grid-row:\s*2/s);
-  assert.match(html, /#notice-dismiss\s*\{[^}]*grid-column:\s*2[^}]*grid-row:\s*2/s);
   assert.match(html, /<div id="meta">\s*<span id="brand"><\/span>\s*<span id="reward"><\/span>/s);
+});
+
+test("안내 끄기는 [안내] 배지와 같은 열에서 시작한다", () => {
+  // 2열에 두면 배지 폭+간격만큼 들여써져 문구에 딸린 것처럼 보인다. 1열에서 시작하되
+  // 유연한 2열을 함께 걸쳐야 1열 폭이 배지가 아니라 이 버튼 기준으로 넓어지지 않는다.
+  assert.match(html, /#notice-dismiss\s*\{[^}]*grid-column:\s*1\s*\/\s*span 2[^}]*grid-row:\s*2/s);
+  assert.match(html, /#notice-dismiss\s*\{[^}]*justify-self:\s*start/s);
+});
+
+test("안내 문구는 적립 현황 열까지 걸쳐 첫 행을 전부 쓴다", () => {
+  // 안내는 한 줄이라 둘째 행을 비운다. 2열만 쓰면 3열 폭이 첫 행에서 그대로 비고
+  // 그만큼 문구가 일찍 말줄임된다 (420px 창에서 가용 265px < 안내 문구 278px).
+  assert.match(html, /#strip\.notice #text\s*\{[^}]*grid-column:\s*2\s*\/\s*span 2[^}]*grid-row:\s*1/s);
+  assert.match(html, /#strip\.notice #text\s*\{[^}]*-webkit-line-clamp:\s*1/s);
 });
