@@ -258,6 +258,39 @@ describe("안내 숨김 prefs (CLAW-163)", () => {
   });
 });
 
+// 스키마와 메뉴 배선이 멀쩡해도 쓰기가 거절되면 세 컨트롤(광고판 `안내 끄기` 버튼, 메뉴의
+// `안내 끄기`·`광고 일시중지`)이 전부 무반응이 된다. 위 테스트들은 스키마만 봐서 이걸 놓쳤다.
+// 여기서는 컨트롤러 왕복까지 확인한다 — 커밋이 돼야 미러 변수가 갱신되고 표시 효과가 돈다 (CLAW-170).
+describe("일시중지·안내 끄기 쓰기 경로 (CLAW-170)", () => {
+  const { createSettingsController } = require("../src/settings-controller");
+  const { getDefaults } = require("../src/prefs");
+
+  // locked: true — 디스크에 쓰지 않고도 store 커밋은 그대로 일어난다.
+  const controller = () =>
+    createSettingsController({ loadResult: { snapshot: getDefaults(), locked: true } });
+
+  for (const key of ["clawadAdsPaused", "clawadNoticesHidden"]) {
+    it(`${key}를 켜면 실제로 커밋된다`, () => {
+      const c = controller();
+      const result = c.applyUpdate(key, true);
+      assert.strictEqual(result.status, "ok", `쓰기가 거절되면 컨트롤이 무반응이 된다: ${result.message}`);
+      assert.strictEqual(c.get(key), true);
+    });
+
+    it(`${key}는 boolean만 받는다`, () => {
+      assert.strictEqual(controller().applyUpdate(key, "true").status, "error");
+    });
+  }
+
+  it("커밋되면 구독자가 발화한다 — 광고판을 즉시 내리는 효과가 여기에 달려 있다", () => {
+    const c = controller();
+    const seen = [];
+    c.subscribeKey("clawadNoticesHidden", (value) => seen.push(value));
+    c.applyUpdate("clawadNoticesHidden", true);
+    assert.deepStrictEqual(seen, [true], "구독자가 안 돌면 광고판이 그대로 남는다");
+  });
+});
+
 describe("리워드샵 메뉴 항목 (CLAW-166)", () => {
   it("트레이와 컨텍스트 메뉴에서 안내 설정 다음에 리워드샵을 연다", () => {
     const initMenu = loadMenuWithElectron(fakeElectron());
