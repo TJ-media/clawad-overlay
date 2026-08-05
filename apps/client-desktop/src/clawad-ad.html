@@ -127,32 +127,62 @@
 
       /* 광고 문구는 두 줄까지 쓴다 (CLAW-162). 정책 상한(maxWidthPx 420)이 운영 소재보다
          좁아서 한 줄로는 34자짜리도 전부 말줄임됐다 — 폭을 키워 화면을 더 차지하는 대신
-         세로를 한 줄 내준다. 두 줄이면 약 64자라 현재 인벤토리(최장 47자)가 다 들어간다.
+         세로를 한 줄 내준다.
 
-         line-clamp는 `display: -webkit-box`를 요구하므로 flex 자식으로 두지 않는다.
-         줄 수를 넘길 때만 말줄임이 붙는다 — 짧은 문구는 전문이 그대로 보인다.
-         line-height를 고정하는 이유는 메인의 창 높이 상수가 이 값을 전제로 계산되기 때문이다. */
+         문구는 **1행2열·1행3열·2행2열 세 칸에 걸쳐 ㄴ자로 흐른다** (CLAW-169). 적립 현황이
+         쓰는 칸은 2행3열 하나뿐인데, 문구를 2열에만 두면 3열 폭이 첫 행에서도 그대로 비었다
+         — 420px 창에서 광고 문구 가용 폭이 197px뿐이라 두 줄로도 394px밖에 못 썼다.
+         첫 행을 3열까지 넓히고 둘째 줄만 적립 현황을 비켜 가면 546px까지 쓴다.
+
+         그리드 항목은 직사각형이라 ㄴ자로 놓을 수 없다. 그래서 문구 칸은 2·3열 × 1·2행
+         직사각형으로 두고, 2행 오른쪽만 `::before` float의 `shape-outside`로 도려낸다.
+         적립 현황(#meta)은 그 도려낸 자리에 그대로 겹쳐 놓인다 — 겹치는 항목은 DOM 순서로
+         칠해지므로 문구보다 뒤에 있는 #meta가 위에 온다.
+
+         line-height를 고정하는 이유는 메인의 창 높이 상수가 이 값을 전제로 계산되기 때문이다
+         (clawad-ad-width.js TEXT_LINE_HEIGHT). max-height는 그 두 줄이다 — 줄 경계에서
+         잘라야 세 번째 줄의 글자 윗부분이 몇 px 삐져나오지 않는다. */
       #text {
-        grid-column: 2;
+        grid-column: 2 / span 2;
         grid-row: 1 / span 2;
         min-width: 0;
-        display: -webkit-box;
-        -webkit-box-orient: vertical;
-        -webkit-line-clamp: 2;
+        display: block;
         overflow: hidden;
+        max-height: 34px;
         line-height: 17px;
+      }
+
+      /* 2행 오른쪽(적립 현황 자리)을 도려낸다. float는 첫 줄부터 자리를 차지하므로 폭이 아니라
+         **모양**으로 비운다 — 위 17px은 비우고 아래 17px만 문구를 밀어낸다. margin으로 내리면
+         마진 박스까지 줄 박스가 피해서 첫 줄도 같이 좁아진다.
+
+         폭은 렌더러가 실측한 적립 현황 폭 + 열 간격을 `--meta-cutout`으로 준다. 적립 현황은
+         금액·광고주에 따라 폭이 바뀌므로 CSS에 상수로 박을 수 없다. 기본값은 변수가 오기 전
+         첫 프레임용이다. */
+      #text::before {
+        content: "";
+        float: right;
+        width: var(--meta-cutout, 96px);
+        height: 34px;
+        shape-outside: polygon(0 17px, 100% 17px, 100% 34px, 0 34px);
       }
 
       /* 안내 문구는 무조건 한 줄이다. 광고가 아니라 자리 채움이라 세로를 더 쓰지 않는다.
          한 줄이라 둘째 행을 비우므로 **적립 현황 열(3열)까지 걸쳐** 첫 행을 전부 쓴다 —
          광고와 달리 둘째 줄이 없어 3열을 피할 이유가 없다. 2열만 쓰면 3열 폭(적립 현황
          자리)이 첫 행에서 그대로 비고, 그만큼 문구가 일찍 말줄임된다: 420px 창에서 가용
-         265px인데 현재 안내 문구가 278px라 전부 잘렸다. 걸치면 347px가 되어 다 들어간다. */
+         265px인데 현재 안내 문구가 278px라 전부 잘렸다. 걸치면 347px가 되어 다 들어간다.
+
+         한 줄뿐이라 도려낼 것도 없다 — 컷아웃을 지우고 한 줄 말줄임을 쓴다. */
       #strip.notice #text {
-        -webkit-line-clamp: 1;
         grid-column: 2 / span 2;
         grid-row: 1;
+        max-height: 17px;
+        white-space: nowrap;
+        text-overflow: ellipsis;
       }
+
+      #strip.notice #text::before { content: none; }
 
       /* 누를 수 있는 표시는 문구에 밑줄을 둔다. ↗만으로는 눌리는 줄 모른다는 피드백. */
       #strip.linked #text {
