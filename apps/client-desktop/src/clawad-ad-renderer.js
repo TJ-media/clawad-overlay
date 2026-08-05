@@ -8,6 +8,7 @@
   const text = document.getElementById("text");
   const brand = document.getElementById("brand");
   const reward = document.getElementById("reward");
+  const meta = document.getElementById("meta");
   const noticeDismiss = document.getElementById("notice-dismiss");
   let linked = false;
 
@@ -64,14 +65,18 @@
   function paintReward(confirmed, accrued) {
     if (shownTenths === null) {
       reward.textContent = "";
+      syncMetaCutout();
       return;
     }
     const shown = formatTenths(shownTenths);
     if (accrued) {
       reward.textContent = `예상 적립 ${shown}P`;
-      return;
+    } else {
+      reward.textContent = `예상 적립 ${shown}P · 확정 ${confirmed.toLocaleString("ko-KR")}P`;
     }
-    reward.textContent = `예상 적립 ${shown}P · 확정 ${confirmed.toLocaleString("ko-KR")}P`;
+    // 굴러가는 동안 소수점 한 자리가 붙었다 떨어지며 폭이 바뀐다. 문구 둘째 줄이 비켜 갈
+    // 폭도 같이 따라가야 적립 현황에 겹치거나 사이가 벌어지지 않는다 (CLAW-169).
+    syncMetaCutout();
   }
 
   /**
@@ -138,19 +143,15 @@
    * 내용에 맞는 자연 폭(CSS px). 창이 곧 패널이라 짧은 광고에도 창이 최대 폭으로 뜨던 것을
    * 줄이기 위해 잰다 (CLAW-156).
    *
-   * `#text`는 `flex: 1 1 auto`라 늘어나므로 `scrollWidth`로는 자연 폭이 나오지 않는다. 잠깐
-   * 늘어나지 않게 바꾸고 `max-content`로 재는데, **읽고 바로 되돌리므로 화면에 반영되지
+   * 스트립을 잠깐 `max-content`로 두고 재는데, **읽고 바로 되돌리므로 화면에 반영되지
    * 않는다** — 같은 프레임 안에서 레이아웃만 계산되고 그 상태로 페인트되지 않는다.
    * 세로는 그대로다: 행 수가 고정이라 높이는 메인의 STRIP_HEIGHT가 계속 맞다.
    */
   function measureNaturalWidth() {
-    const textFlex = text.style.flex;
     const stripWidth = strip.style.width;
-    text.style.flex = "0 0 auto";
     strip.style.width = "max-content";
     const measured = strip.getBoundingClientRect().width;
     strip.style.width = stripWidth;
-    text.style.flex = textFlex;
     // 메인은 이 값을 **창 폭**으로 쓴다. 그런데 스트립은 body 안에 있고 body에는 좌우 여백이
     // 있으므로(세션 HUD와 맞춘 padding), 여백을 더하지 않으면 창이 스트립보다 그만큼 좁게 떠서
     // 스트립이 눌리고 **문구가 길이와 무관하게 항상 말줄임된다.**
@@ -158,6 +159,21 @@
     const bodyStyle = window.getComputedStyle(document.body);
     const sidePadding = parseFloat(bodyStyle.paddingLeft) + parseFloat(bodyStyle.paddingRight);
     return Math.ceil(measured + (Number.isFinite(sidePadding) ? sidePadding : 0));
+  }
+
+  /**
+   * 문구 둘째 줄이 비켜 갈 폭(CLAW-169). 문구는 2·3열에 걸쳐 흐르고 2행 오른쪽만 적립 현황에
+   * 내주는데, 그 폭이 금액·광고주 길이에 따라 바뀌므로 CSS 상수로 둘 수 없다. 여기서 재서
+   * `--meta-cutout`으로 넘긴다 — 도려낼 모양 자체는 CSS가 정하고 폭만 알려주는 것이다.
+   *
+   * 열 간격을 더하는 이유: 적립 현황 열 폭만 비우면 문구 둘째 줄이 적립 현황에 딱 붙는다.
+   * 값은 CSS에서 읽는다 — 간격을 상수로 박으면 CSS와 어긋난다.
+   */
+  function syncMetaCutout() {
+    if (!meta) return;
+    const gap = parseFloat(window.getComputedStyle(strip).columnGap);
+    const width = meta.getBoundingClientRect().width + (Number.isFinite(gap) ? gap : 0);
+    strip.style.setProperty("--meta-cutout", `${Math.ceil(width)}px`);
   }
 
   function reportWidth() {
@@ -190,6 +206,9 @@
     linked = ad.linked === true;
     strip.classList.toggle("linked", linked);
     strip.classList.add("visible");
+    // 적립 현황을 다 그린 뒤에 컷아웃을 맞춘다 — 금액이 바뀌면 비켜 갈 폭도 바뀐다.
+    // 폭 측정보다 먼저 해야 한다: 컷아웃이 문구가 흐르는 모양을 바꾸므로 자연 폭에도 반영된다.
+    syncMetaCutout();
     // 클래스까지 다 붙인 뒤에 잰다 — notice/linked가 [광고]↔[안내] 표기와 밑줄을 바꿔 폭이 달라진다.
     reportWidth();
   }

@@ -18,7 +18,15 @@ function mountRenderer() {
     classes: new Set(),
     listeners: new Map(),
     // 폭 측정이 잠깐 바꿨다 되돌리는 값 (CLAW-156). 되돌렸는지 테스트가 확인한다.
-    style: { flex: "", width: "" },
+    // setProperty는 문구 컷아웃 폭을 넘기는 데 쓴다 (CLAW-169) — 실제 CSSStyleDeclaration과
+    // 같이 커스텀 속성이 조회되게 둔다.
+    style: {
+      flex: "",
+      width: "",
+      custom: new Map(),
+      setProperty(name, value) { this.custom.set(name, value); },
+      getPropertyValue(name) { return this.custom.get(name) || ""; },
+    },
     // 실제 레이아웃이 없으므로 문구 길이에 비례하는 가짜 폭을 돌려준다.
     getBoundingClientRect: () => ({ width: 40 + nodes.get("text").textContent.length * 7 }),
     classList: {
@@ -41,7 +49,10 @@ function mountRenderer() {
   global.window = {
     // clawad-ad.html의 `body { padding: 2px 3px 8px; }`와 같은 값. 창 폭은 스트립 바깥의
     // 이 여백까지 포함해야 한다 — 빼먹으면 문구가 길이와 무관하게 말줄임된다.
-    getComputedStyle: (node) => (node === body ? { paddingLeft: "3px", paddingRight: "3px" } : {}),
+    // 스트립의 열 간격은 문구 컷아웃 폭에 더해진다 (CLAW-169). clawad-ad.html의 column-gap과 같은 값.
+    getComputedStyle: (node) => (node === body
+      ? { paddingLeft: "3px", paddingRight: "3px" }
+      : { columnGap: "8px" }),
     clawadAdAPI: {
       onAd: (cb) => { render = cb; },
       openAd: () => {},
@@ -60,6 +71,7 @@ function mountRenderer() {
     reward: nodes.get("reward"),
     strip: nodes.get("strip"),
     text: nodes.get("text"),
+    meta: nodes.get("meta"),
     noticeDismiss: nodes.get("notice-dismiss"),
     dismissed: () => dismissed,
     reported,
@@ -279,8 +291,18 @@ test("측정이 끝나면 임시로 바꾼 스타일을 되돌린다 — 화면�
 
   render({ kind: "ad", text: "광고 문구", brand: "클로애드", linked: false, reward: null });
 
-  assert.strictEqual(text.style.flex, "", "#text의 flex가 원래대로 돌아와야 한다");
   assert.strictEqual(strip.style.width, "", "#strip의 width가 원래대로 돌아와야 한다");
+});
+
+test("문구가 비켜 갈 폭을 적립 현황 폭 + 열 간격으로 넘긴다 (CLAW-169)", (t) => {
+  t.mock.timers.enable({ apis: ["setInterval"] });
+  const { render, strip, meta } = mountRenderer();
+
+  render({ kind: "ad", text: "광고 문구", brand: "클로애드", linked: false, reward: { verifying: 5, confirmed: 1 } });
+
+  // 스텁의 getBoundingClientRect는 문구 길이에 비례한 가짜 폭을 준다. 컷아웃은 그 폭 + 8px이어야 한다.
+  const expected = `${Math.ceil(meta.getBoundingClientRect().width + 8)}px`;
+  assert.strictEqual(strip.style.getPropertyValue("--meta-cutout"), expected);
 });
 
 test("광고를 숨길 때는 폭을 보고하지 않는다", (t) => {
