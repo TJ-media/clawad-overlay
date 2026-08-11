@@ -383,6 +383,17 @@ module.exports = function initUpdateBubble(ctx) {
     });
   }
 
+  // 다운로드 진행률 갱신. 표시 중인 버블에만 보내고, 마지막 값을 payload에도 기록해
+  // 창이 다시 로드되거나 재표시돼도 진행바가 0%로 되돌아가지 않게 한다.
+  function setUpdateBubbleProgress(percent) {
+    const value = Number(percent);
+    if (!Number.isFinite(value)) return;
+    const clamped = Math.max(0, Math.min(100, value));
+    if (activePayload) activePayload.progress = clamped;
+    if (!bubble || bubble.isDestroyed() || bubble.webContents.isLoading()) return;
+    bubble.webContents.send("update-bubble-progress", clamped);
+  }
+
   function hideUpdateBubble() {
     if (!bubble || bubble.isDestroyed()) return;
     bubble.webContents.send("update-bubble-hide");
@@ -440,6 +451,7 @@ module.exports = function initUpdateBubble(ctx) {
   return {
     showUpdateBubble,
     hideUpdateBubble,
+    setUpdateBubbleProgress,
     repositionUpdateBubble,
     handleUpdateBubbleAction,
     handleUpdateBubbleHeight,
