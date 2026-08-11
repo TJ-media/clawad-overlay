@@ -203,7 +203,9 @@
       }
 
       #brand:empty { display: none; }
-      #brand:not(:empty) ~ #reward::before { content: "· "; }
+      /* 광고주와 구분점 사이에도 한 칸 띄운다. 앞 공백은 일반 스페이스로 두면 #reward 인라인
+         내용의 맨 앞이라 공백 처리 규칙에 걸려 사라지므로 nbsp(\00a0)를 쓴다. */
+      #brand:not(:empty) ~ #reward::before { content: "\00a0· "; }
 
       /* 적립 현황. 서버가 계산해 내려준 값을 그대로 보여준다 — 자르지 않는다. */
       #reward {
