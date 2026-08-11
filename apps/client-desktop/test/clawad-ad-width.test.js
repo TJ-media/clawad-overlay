@@ -8,6 +8,7 @@ const {
   MIN_AD_WIDTH,
   AD_WIDTH_STEP_PX,
   AD_STRIP_HEIGHT,
+  NOTICE_MAX_WIDTH,
   NOTICE_STRIP_HEIGHT,
   clampWidth,
   shouldAdopt,
@@ -44,11 +45,34 @@ test("첫 측정은 항상 채택한다", () => {
   assert.strictEqual(shouldAdopt(300, undefined), true);
 });
 
-test("임계값 미만의 변화는 무시한다 — 회전마다 창이 흔들리지 않게", () => {
-  assert.strictEqual(shouldAdopt(300 + AD_WIDTH_STEP_PX - 1, 300), false);
+test("임계값 미만으로 좁히는 변화는 무시한다 — 회전마다 창이 흔들리지 않게", () => {
   assert.strictEqual(shouldAdopt(300 - (AD_WIDTH_STEP_PX - 1), 300), false);
-  assert.strictEqual(shouldAdopt(300 + AD_WIDTH_STEP_PX, 300), true);
   assert.strictEqual(shouldAdopt(300 - AD_WIDTH_STEP_PX, 300), true);
+});
+
+test("넓히는 변화는 임계값 미만이어도 채택한다 — 막으면 문구가 말줄임된다", () => {
+  // 흔들림 방지가 넓히는 쪽까지 막으면 창이 좁은 채로 남고, 창이 곧 패널이라 글자가 잘린다.
+  assert.strictEqual(shouldAdopt(300 + 1, 300), true, "1px이라도 더 필요하면 넓혀야 한다");
+  assert.strictEqual(shouldAdopt(300 + AD_WIDTH_STEP_PX - 1, 300), true);
+  assert.strictEqual(shouldAdopt(300 + AD_WIDTH_STEP_PX, 300), true);
+});
+
+test("안내 문구 회전에서 말줄임이 생기지 않는다 — 실측 자연 폭 재현", () => {
+  // 실측값(border-box, 12px 폰트): 안내 3종이 각각 350·365·332px.
+  // 350 → 365는 15px 차이라 임계값 16px에 걸려 거절됐고, 창이 350에 머물러
+  // "작업하는 동안에만 광고가 표시되며 리워드가 적립돼요"가 회전마다 잘렸다.
+  const naturalWidths = [350, 365, 332];
+  let current = null;
+
+  for (let round = 0; round < 2; round += 1) {
+    for (const natural of naturalWidths) {
+      if (shouldAdopt(natural, current)) current = natural;
+      assert.ok(
+        clampWidth(current, NOTICE_MAX_WIDTH) >= natural,
+        `창 폭이 자연 폭보다 좁으면 말줄임된다 (자연 ${natural}, 창 ${clampWidth(current, NOTICE_MAX_WIDTH)})`
+      );
+    }
+  }
 });
 
 test("하한 이하로 내려가는 변화는 임계값과 무관하게 채택한다", () => {

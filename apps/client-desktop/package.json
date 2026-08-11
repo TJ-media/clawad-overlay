@@ -1,6 +1,7 @@
 {
   "name": "clawd-on-desk",
-  "version": "0.1.11",
+  "productName": "Claw-Ad",
+  "version": "0.1.12",
   "description": "A desktop pet that reacts to your Claude Code sessions in real-time.",
   "main": "src/main.js",
   "scripts": {

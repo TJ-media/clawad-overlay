@@ -156,6 +156,18 @@ AGPL이 요구하는 저작권 표시·변경 고지는 이 문서와 보존된 
     `root.ClawdSettingsI18n`, upstream 저작권·기여자 고지, `package.json`의 `author`·`linux.maintainer`
     (연락처 확정 필요 — 아래 4b 참조), 콘솔 로그 접두사
 
+- 2026-08-05 — userData 디렉터리 이름에서 포크 원본 이름 제거. (CLAW-155)
+  - `package.json`에 **최상위 `productName: "Claw-Ad"`** 추가. Electron의 `app.getName()`이
+    최상위 `productName` → `name` 순으로 결정되고 `app.getPath("userData")`가 거기서 파생되므로,
+    `build.productName`만으로는 경로가 `clawd-on-desk`로 남아 있었다
+    (macOS `~/Library/Application Support/clawd-on-desk/`, Windows `%APPDATA%\clawd-on-desk\`)
+  - `name`은 **그대로 둔다** — 위 "바꾸지 않은 것"의 소문자 기능 식별자와 같은 값이라
+    바꾸면 훅 마커·플러그인 id 쪽에 영향이 간다
+  - 기존 설치본의 설정·테마를 잃지 않도록 `src/userdata-migration.js`가 첫 실행에 구 디렉터리를
+    새 이름으로 한 번 옮긴다. 회귀 가드는 `test/package-build-config.test.js`
+  - `CFBundleIdentifier`(`ai.clawad.overlay`)는 건드리지 않는다 — 바꾸면 자동 업데이트와
+    로그인 항목 등록이 끊긴다
+
 ## 4b. 배포 전 반드시 처리할 것
 
 - ~~**`package.json`의 `author`·`linux.maintainer`가 upstream 저작자로 남아 있다.**~~

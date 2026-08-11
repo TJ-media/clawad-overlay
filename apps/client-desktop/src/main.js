@@ -72,6 +72,15 @@ if (_xwaylandRelaunch) {
 const { clampTextScale, scaleWidth, scaleHeight, resolveTextScaleForKey } = require("./text-scale");
 const path = require("path");
 const fs = require("fs");
+
+// 포크 원본 이름으로 만들어졌던 userData 디렉터리를 제품 이름으로 옮긴다 (CLAW-155).
+// **아래 어떤 코드보다 먼저** 실행돼야 한다 — app.getPath("userData")를 한 번이라도 읽고 나면
+// (PREFS_PATH, themeLoader.init, 디버그 로그 등) 그 경로에 파일이 생겨 이전 대상이 갈린다.
+require("./userdata-migration").migrateUserDataDir({
+  appDataDir: app.getPath("appData"),
+  currentDirName: app.getName(),
+});
+
 const { pathToFileURL } = require("url");
 const { EventEmitter } = require("events");
 const {
