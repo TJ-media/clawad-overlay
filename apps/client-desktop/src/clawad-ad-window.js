@@ -15,7 +15,7 @@ const { ADS_EXHAUSTED_NOTICE, LOGIN_NOTICE, rotatingNotice } = require("./clawad
 const clawadSurfaceLock = require("./clawad-surface-lock");
 const { keepOutOfTaskbar } = require("./taskbar");
 // 폭 결정은 순수 함수로 분리해 Electron 없이 검증한다 (CLAW-156).
-const { NOTICE_STRIP_HEIGHT, clampWidth, shouldAdopt, stripHeight } = require("./clawad-ad-width");
+const { NOTICE_MAX_WIDTH, NOTICE_STRIP_HEIGHT, clampWidth, shouldAdopt, stripHeight } = require("./clawad-ad-width");
 
 const isMac = process.platform === "darwin";
 const isWin = process.platform === "win32";
@@ -39,12 +39,8 @@ const TICK_MS = 1000;
 const STRIP_HEIGHT = NOTICE_STRIP_HEIGHT;
 /** 펫과 광고 줄 사이 여백. */
 const PET_GAP = 6;
-/**
- * 안내 문구를 띄울 때의 창 폭. 정책값 maxWidthPx는 광고 표시 폭이고, 미로그인 상태에는
- * 정책 캐시 자체가 없다(정책은 sync가 받아오는데 sync는 로그인이 필요하다). 광고가 아닌
- * 안내에까지 정책값을 요구하면 로그인 안내를 영영 못 띄운다. 정책이 있으면 그 폭을 쓴다.
- */
-const NOTICE_WIDTH = 320;
+/** 안내 문구 창 폭 상한. 폭 결정은 clawad-ad-width.js가 모아 갖는다. */
+const NOTICE_WIDTH = NOTICE_MAX_WIDTH;
 /** 로그인으로 해결되는 상태. 그 외(네트워크 장애 등)는 안내해도 사용자가 할 일이 없다. */
 const LOGIN_PROMPT_STATUSES = new Set(["logged-out", "login-needed", "consent-needed"]);
 
