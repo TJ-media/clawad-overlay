@@ -2624,6 +2624,7 @@ const _updaterCtx = {
   t, rebuildAllMenus, updateLog,
   showUpdateBubble: (payload) => showUpdateBubble(payload),
   hideUpdateBubble: () => hideUpdateBubble(),
+  setUpdateBubbleProgress: (percent) => _updateBubble.setUpdateBubbleProgress(percent),
   setUpdateVisualState: (kind) => _state.setUpdateVisualState(kind),
   applyState: (state, svgOverride) => applyState(state, svgOverride),
   resolveDisplayState: () => resolveDisplayState(),

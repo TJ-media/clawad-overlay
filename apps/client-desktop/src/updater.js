@@ -351,6 +351,8 @@ function initUpdater(ctx, deps = {}) {
       mode,
       title,
       message,
+      // 숫자일 때만 싣는다 — 없으면 렌더러가 진행바를 숨긴다.
+      ...(Number.isFinite(Number(extra.progress)) ? { progress: Number(extra.progress) } : {}),
       detail: extra.detail || "",
       version: extra.version || "",
       actions: extra.actions || [],
@@ -1149,10 +1151,13 @@ function initUpdater(ctx, deps = {}) {
         updateStatus = "downloading";
         setOverlay("downloading");
         rebuildMenus();
+        // 본문에 제목과 같은 문구를 넣지 않는다 — 같은 말이 두 줄로 겹쳐 보인다.
+        // 진행 상황은 문구 대신 진행바로 알린다(download-progress 핸들러가 채운다).
         await showInfoBubble(
           "downloading",
           t("updateDownloading", "Downloading Update..."),
-          t("updateDownloading", "Downloading Update...")
+          "",
+          { progress: 0 }
         );
         autoUpdater.downloadUpdate();
       };
@@ -1171,6 +1176,16 @@ function initUpdater(ctx, deps = {}) {
         version: info.version,
         onPrimary,
       });
+    });
+
+    // 다운로드 진행률 → 버블 진행바. 카드를 다시 그리지 않고 막대 폭만 갱신한다.
+    autoUpdater.on("download-progress", (progress) => {
+      const percent = Number(progress && progress.percent);
+      if (!Number.isFinite(percent)) return;
+      if (typeof ctx.setUpdateBubbleProgress !== "function") return;
+      try {
+        ctx.setUpdateBubbleProgress(percent);
+      } catch {}
     });
 
     autoUpdater.on("update-not-available", async () => {
