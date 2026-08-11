@@ -230,6 +230,9 @@
         background: transparent;
         color: var(--text-muted);
         font: inherit;
+        /* 본문(12px)보다 한 단계 작게. 보조 텍스트(#open·적립 현황)와 같은 11px로 맞춘다.
+           font 축약형이 크기를 되돌리므로 반드시 그 뒤에 온다. */
+        font-size: 11px;
         text-decoration: underline;
         text-underline-offset: 2px;
         cursor: pointer;
