@@ -12,6 +12,7 @@ const IDS = ["strip", "text", "meta", "brand", "reward", "open", "label", "notic
 
 /** 렌더러를 새 DOM 위에 올리고 render 함수를 돌려준다. */
 function mountRenderer() {
+  const measuredCutouts = [];
   const nodes = new Map(IDS.map((id) => [id, {
     textContent: "",
     hidden: false,
@@ -26,9 +27,17 @@ function mountRenderer() {
       custom: new Map(),
       setProperty(name, value) { this.custom.set(name, value); },
       getPropertyValue(name) { return this.custom.get(name) || ""; },
+      removeProperty(name) { this.custom.delete(name); },
     },
     // 실제 레이아웃이 없으므로 문구 길이에 비례하는 가짜 폭을 돌려준다.
-    getBoundingClientRect: () => ({ width: 40 + nodes.get("text").textContent.length * 7 }),
+    // 폭을 재는 순간의 컷아웃도 함께 남긴다 — float 기여를 뺐는지 검사한다 (CLAW-219).
+    getBoundingClientRect() {
+      const self = nodes.get(id);
+      if (id === "strip" && self.style.width === "max-content") {
+        measuredCutouts.push(self.style.getPropertyValue("--meta-cutout"));
+      }
+      return { width: 40 + nodes.get("text").textContent.length * 7 };
+    },
     classList: {
       add: (...names) => names.forEach((n) => nodes.get(id).classes.add(n)),
       remove: (...names) => names.forEach((n) => nodes.get(id).classes.delete(n)),
@@ -75,6 +84,7 @@ function mountRenderer() {
     noticeDismiss: nodes.get("notice-dismiss"),
     dismissed: () => dismissed,
     reported,
+    measuredCutouts,
   };
 }
 
@@ -332,4 +342,22 @@ test("안내 끄기 버튼은 끌 수 있는 안내에만 보이고 별도 신�
 
   render({ kind: "login", text: "로그인", brand: "", linked: true, reward: null, dismissible: false });
   assert.strictEqual(noticeDismiss.hidden, true, "로그인 안내는 기존 동작을 유지한다");
+});
+
+// 고유 폭 계산에는 float의 박스 폭이 더해지고 shape-outside는 반영되지 않는다. 컷아웃을 켜 둔
+// 채로 재면 창이 그만큼 넓어지고, 실제 배치에서는 shape가 1행을 통과시켜 문구 오른쪽에 컷아웃
+// 폭만큼 빈칸이 남는다 (macOS 실측 55~74px, CLAW-219).
+test("자연 폭을 잴 때는 컷아웃 float을 빼고 잰다 (CLAW-219)", () => {
+  const { render, strip, measuredCutouts } = mountRenderer();
+
+  render({ kind: "ad", text: "광고 문구", brand: "클로애드", linked: false, reward: { verifying: 10, confirmed: 100 } });
+
+  assert.ok(measuredCutouts.length > 0, "max-content로 재는 순간이 있어야 한다");
+  for (const seen of measuredCutouts) {
+    assert.strictEqual(seen, "0px", "재는 동안에는 컷아웃이 폭에 더해지지 않아야 한다");
+  }
+  // 레이아웃 시점의 컷아웃은 건드리지 않는다 — 두 줄로 감기는 문구가 2행을 비켜 가야 한다.
+  const restored = strip.style.getPropertyValue("--meta-cutout");
+  assert.match(restored, /^\d+px$/, `측정 뒤 컷아웃이 복원돼야 한다: ${restored}`);
+  assert.notStrictEqual(restored, "0px");
 });

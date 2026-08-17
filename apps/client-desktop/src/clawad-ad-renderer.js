@@ -149,9 +149,26 @@
    */
   function measureNaturalWidth() {
     const stripWidth = strip.style.width;
+    // 컷아웃 float을 재는 동안만 지운다 (CLAW-219).
+    //
+    // **고유 폭 계산에는 float의 박스 폭이 더해지고 `shape-outside`는 반영되지 않는다.**
+    // 그래서 컷아웃을 켜 둔 채 `max-content`로 재면 `문구 한 줄 폭 + 컷아웃 폭`이 나오는데,
+    // 실제 배치에서는 shape가 1행을 통과시키므로 문구는 그 폭을 쓰지 않는다 — 문구 오른쪽에
+    // 컷아웃 폭만큼 빈칸이 남는다(macOS 실측: 55~74px).
+    //
+    // Windows에서 안 보였던 이유는 한글이 더 넓게 렌더돼 자연 폭이 정책 상한을 넘고, 문구가
+    // 두 줄로 감기면서 2행이 컷아웃 자리를 실제로 썼기 때문이다. 증상이 플랫폼별로 다를 뿐
+    // 측정이 틀린 것은 양쪽 같다.
+    //
+    // **레이아웃 시점의 컷아웃은 그대로 둔다.** 두 줄로 감기는 문구는 여기서 잰 한 줄 폭이
+    // 상한을 넘어 메인이 자르고, 그 뒤 배치에서는 원래 컷아웃이 2행을 비켜 가게 한다.
+    const cutout = strip.style.getPropertyValue("--meta-cutout");
+    strip.style.setProperty("--meta-cutout", "0px");
     strip.style.width = "max-content";
     const measured = strip.getBoundingClientRect().width;
     strip.style.width = stripWidth;
+    if (cutout) strip.style.setProperty("--meta-cutout", cutout);
+    else strip.style.removeProperty("--meta-cutout");
     // 메인은 이 값을 **창 폭**으로 쓴다. 그런데 스트립은 body 안에 있고 body에는 좌우 여백이
     // 있으므로(세션 HUD와 맞춘 padding), 여백을 더하지 않으면 창이 스트립보다 그만큼 좁게 떠서
     // 스트립이 눌리고 **문구가 길이와 무관하게 항상 말줄임된다.**
