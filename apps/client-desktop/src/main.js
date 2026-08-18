@@ -469,8 +469,25 @@ function hydrateSystemBackedSettings() {
   } catch (err) {
     console.warn("Clawd: failed to read system openAtLogin during hydration:", err && err.message);
   }
+  // A fresh install starts with login-startup ON (CLAW-228) — see
+  // firstRunOpenAtLogin() for why upgrading users keep their OS value.
+  const decision = loginItemHelpers.firstRunOpenAtLogin({
+    systemValue,
+    freshInstall: !!(_initialPrefsLoad && _initialPrefsLoad.fresh),
+  });
+  let openAtLoginValue = decision.openAtLogin;
+  if (decision.enable) {
+    // applyUpdate runs the pre-commit gate, which writes the OS login item and
+    // refuses to commit if that write fails. hydrate() skips effects, so it
+    // cannot be used to turn this on.
+    const written = _settingsController.applyUpdate("openAtLogin", true);
+    if (written && written.status === "error") {
+      console.warn("Clawd: failed to enable openAtLogin on first run:", written.message);
+      openAtLoginValue = false;
+    }
+  }
   const result = _settingsController.hydrate({
-    openAtLogin: systemValue,
+    openAtLogin: openAtLoginValue,
     openAtLoginHydrated: true,
   });
   if (result && result.status === "error") {

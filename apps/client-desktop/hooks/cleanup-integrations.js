@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 "use strict";
 
+const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const { spawnSync } = require("child_process");
 
 const { unregisterHooks: unregisterClaudeHooks, unregisterClaudeStatusline } = require("./install");
 const { unregisterGeminiHooks } = require("./gemini-install");
@@ -327,6 +329,44 @@ function notesFromResult(agentId, result) {
   return notes;
 }
 
+// 설치가 등록한 "로그인 시 자동 실행"을 되돌린다 (CLAW-228, 규칙 §8 — 제거는 설치가 바꾼 것을
+// 전부 되돌린다). 이 스크립트는 Electron API 없이 도는 순수 Node 진입점이라
+// app.setLoginItemSettings를 쓸 수 없다. OS가 실제로 쓰는 저장소를 직접 지운다.
+//
+// 경로·이름은 src/login-item.js와 Electron이 쓰는 것과 같아야 한다 —
+// test/menu-autostart.test.js가 그 일치를 강제한다.
+const AUTOSTART_FILE = path.join(os.homedir(), ".config", "autostart", "clawd-on-desk.desktop");
+const WINDOWS_RUN_KEY = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run";
+// Electron은 app.getName()을 값 이름으로 쓴다 — package.json의 productName이 먼저다.
+// 옛 빌드의 name도 함께 지운다. 없으면 reg가 1로 끝나고, 그건 실패가 아니다.
+const WINDOWS_RUN_VALUES = ["Claw-Ad", "clawd-on-desk"];
+
+function removeLoginItem(options = {}) {
+  const platform = options.platform || process.platform;
+  const run = options.spawnSync || spawnSync;
+  const removed = [];
+  try {
+    if (platform === "win32") {
+      for (const name of WINDOWS_RUN_VALUES) {
+        const result = run("reg", ["delete", WINDOWS_RUN_KEY, "/v", name, "/f"], {
+          stdio: "ignore", windowsHide: true, shell: false,
+        });
+        if (result && !result.error && result.status === 0) removed.push(name);
+      }
+    } else if (platform !== "darwin") {
+      // macOS는 번들이 사라지면 로그인 항목도 함께 정리된다 — 지울 파일이 없다.
+      const file = options.autostartFile || AUTOSTART_FILE;
+      if (fs.existsSync(file)) {
+        fs.unlinkSync(file);
+        removed.push(file);
+      }
+    }
+    return { status: "ok", removed };
+  } catch (err) {
+    return { status: "error", removed, message: err && err.message ? err.message : String(err) };
+  }
+}
+
 function cleanupIntegrations(options = {}) {
   const plan = buildCleanupOptionsForHome(options.homeDir || options.userHome, options);
   const agents = [];
@@ -419,10 +459,15 @@ function cleanupIntegrations(options = {}) {
     agents.push(agent);
   }
 
+  const loginItem = removeLoginItem(options);
+  if (loginItem.status === "error") failed++;
+  entriesRemoved += loginItem.removed.length;
+
   return {
     mode: "apply",
     homeDir: plan.homeDir,
     agents,
+    loginItem,
     summary: {
       agentsChecked: agents.length,
       agentsAffected,
@@ -498,5 +543,6 @@ module.exports = {
   MANAGED_AGENT_IDS,
   buildCleanupOptionsForHome,
   cleanupIntegrations,
+  removeLoginItem,
   parseArgs,
 };

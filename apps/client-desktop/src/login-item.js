@@ -31,6 +31,25 @@ function getLoginItemSettings({ isPackaged, openAtLogin, execPath, appPath }) {
   };
 }
 
+/**
+ * First-run decision for "open at login" (CLAW-228).
+ *
+ * The overlay is the only surface that shows ads, so an overlay that never
+ * starts means no ads and no rewards — one reboot silently ends the service.
+ * A fresh install therefore starts with login-startup ON.
+ *
+ * An UPGRADING user is a different case: their OS value is the truth and may be
+ * a deliberate "off". Copy it rather than turning it back on. That was the
+ * original reason hydration reads the system in the first place.
+ *
+ * Returns `enable: true` only when the caller still has to write to the OS.
+ */
+function firstRunOpenAtLogin({ systemValue, freshInstall }) {
+  if (systemValue) return { openAtLogin: true, enable: false };
+  if (freshInstall) return { openAtLogin: true, enable: true };
+  return { openAtLogin: false, enable: false };
+}
+
 function linuxGetOpenAtLogin() {
   try {
     return fs.existsSync(AUTOSTART_FILE);
@@ -67,6 +86,7 @@ function linuxSetOpenAtLogin(enable, { execCmd } = {}) {
 
 module.exports = {
   AUTOSTART_FILE,
+  firstRunOpenAtLogin,
   getLoginItemSettings,
   linuxGetOpenAtLogin,
   linuxSetOpenAtLogin,
