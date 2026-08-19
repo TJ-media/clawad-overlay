@@ -17,6 +17,7 @@ function createFloatingWindowRuntime(options = {}) {
   const repositionPermissionBubbles = options.repositionPermissionBubbles || noop;
   const repositionUpdateBubble = options.repositionUpdateBubble || noop;
   const repositionSessionHud = options.repositionSessionHud || noop;
+  const repositionClawadAd = options.repositionClawadAd || noop;
   const syncSessionHudVisibility = options.syncSessionHudVisibility || noop;
   const syncUpdateBubbleVisibility = options.syncUpdateBubbleVisibility || noop;
   const hideUpdateBubble = options.hideUpdateBubble || noop;
@@ -28,6 +29,7 @@ function createFloatingWindowRuntime(options = {}) {
 
   function repositionAnchoredSurfaces() {
     repositionSessionHud();
+    repositionClawadAd();
     repositionFloatingBubbles();
   }
 
