@@ -22,6 +22,10 @@ describe("floating-window-runtime", () => {
     const mainSource = fs.readFileSync(path.join(SRC_DIR, "main.js"), "utf8");
 
     assert.match(mainSource, /createFloatingWindowRuntime/);
+    assert.match(
+      mainSource,
+      /floatingWindowRuntime = createFloatingWindowRuntime\(\{[\s\S]*?repositionClawadAd:[\s\S]*?\r?\n\}\);/,
+    );
     assert.ok(!mainSource.includes("if (pendingPermissions.length) repositionBubbles();"));
   });
 
@@ -41,18 +45,19 @@ describe("floating-window-runtime", () => {
     assert.deepStrictEqual(calls, ["update", "permission", "update"]);
   });
 
-  it("keeps anchored surface ordering as HUD first, then permission/update bubbles", () => {
+  it("repositions the ad with the other pet-anchored surfaces", () => {
     const calls = [];
     const runtime = createFloatingWindowRuntime({
       getPendingPermissions: () => [{ bubble: {} }],
       repositionSessionHud: () => calls.push("hud"),
+      repositionClawadAd: () => calls.push("ad"),
       repositionPermissionBubbles: () => calls.push("permission"),
       repositionUpdateBubble: () => calls.push("update"),
     });
 
     runtime.repositionAnchoredSurfaces();
 
-    assert.deepStrictEqual(calls, ["hud", "permission", "update"]);
+    assert.deepStrictEqual(calls, ["hud", "ad", "permission", "update"]);
   });
 
   it("syncs Session HUD visibility before repositioning dependent bubbles", () => {

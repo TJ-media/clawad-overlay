@@ -360,6 +360,7 @@ let themeRuntime = null;
 let agentRuntime = null;
 let systemWakeRecovery = null;
 let floatingWindowRuntime = null;
+let _clawadAd = null;
 let codexPetMain = null;
 let discordPresenceBridge = null;
 const shortcutHandlers = {
@@ -1585,6 +1586,9 @@ floatingWindowRuntime = createFloatingWindowRuntime({
   repositionPermissionBubbles: () => repositionBubbles(),
   repositionUpdateBubble: () => repositionUpdateBubble(),
   repositionSessionHud: () => repositionSessionHud(),
+  repositionClawadAd: () => {
+    if (_clawadAd) _clawadAd.reposition();
+  },
   syncSessionHudVisibility: () => syncSessionHudVisibility(),
   syncUpdateBubbleVisibility: () => syncUpdateBubbleVisibility(),
   hideUpdateBubble: () => hideUpdateBubble(),
@@ -2080,7 +2084,7 @@ getSessionHudWindow = _sessionHud.getWindow;
 getQuotaRingWindow = _sessionHud.getQuotaRingWindow;
 
 // 클로애드 광고 표시 창 (CLAW-90). 펫 아래 한 줄. 표시 판단·스풀 기록은 clawad-ad-runtime이 한다.
-const _clawadAd = require("./clawad-ad-window")({
+_clawadAd = require("./clawad-ad-window")({
   get win() { return win; },
   get petHidden() { return petWindowRuntime.isPetHidden(); },
   get clawadNoticesHidden() { return clawadNoticesHidden; },
