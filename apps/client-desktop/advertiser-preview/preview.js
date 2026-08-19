@@ -16,8 +16,8 @@
 })(typeof globalThis === "object" ? globalThis : this, () => {
   const REQUIRED_IDS = [
     "creativeText", "creativeBrand", "creativeCopy", "creativeBrandOutput",
-    "textCount", "brandCount", "validationMessage", "mascotImage", "mascotName",
-    "mascotChoices", "mascotMessage",
+    "creativeStrip", "creativeMeta", "textCount", "brandCount", "validationMessage",
+    "mascotObject", "mascotChoices", "mascotMessage",
   ];
 
   function createPreviewController(documentRef, model) {
@@ -30,6 +30,36 @@
     let previewCounter = 0;
     let selectedMascot = null;
 
+    function syncCreativeLayout() {
+      const strip = nodes.creativeStrip;
+      if (!strip || !strip.style || typeof strip.getBoundingClientRect !== "function") return;
+
+      if (nodes.creativeMeta && typeof nodes.creativeMeta.getBoundingClientRect === "function") {
+        const view = documentRef && documentRef.defaultView;
+        const computed = view && typeof view.getComputedStyle === "function"
+          ? view.getComputedStyle(strip)
+          : null;
+        const gap = computed ? parseFloat(computed.columnGap) : 0;
+        const metaWidth = nodes.creativeMeta.getBoundingClientRect().width;
+        if (Number.isFinite(metaWidth)) {
+          strip.style.setProperty("--creative-cutout-width", `${Math.ceil(metaWidth + (Number.isFinite(gap) ? gap : 0))}px`);
+        }
+      }
+
+      const cutout = strip.style.getPropertyValue("--creative-cutout-width");
+      const previousWidth = strip.style.width;
+      strip.style.setProperty("--creative-cutout-width", "0px");
+      strip.style.width = "max-content";
+      const naturalWidth = strip.getBoundingClientRect().width;
+      strip.style.width = previousWidth;
+      if (cutout) strip.style.setProperty("--creative-cutout-width", cutout);
+      else strip.style.removeProperty("--creative-cutout-width");
+
+      if (model && typeof model.clampCreativeWidth === "function") {
+        strip.style.width = `${model.clampCreativeWidth(naturalWidth)}px`;
+      }
+    }
+
     function render() {
       if (!nodes.creativeText || !nodes.creativeBrand || !model || typeof model.buildPreviewState !== "function") return null;
       const state = model.buildPreviewState({
@@ -41,6 +71,7 @@
       if (nodes.textCount) nodes.textCount.textContent = `${state.textLength} / 120`;
       if (nodes.brandCount) nodes.brandCount.textContent = `${state.brandLength} / 60`;
       if (nodes.validationMessage) nodes.validationMessage.textContent = state.textEmpty ? "광고 문구를 입력해 주세요." : "";
+      syncCreativeLayout();
       return state;
     }
 
@@ -50,11 +81,12 @@
       selectedMascot = mascot;
       previewCounter += 1;
       if (nodes.mascotMessage) nodes.mascotMessage.textContent = "";
-      if (nodes.mascotImage) {
-        nodes.mascotImage.src = `../themes/clawad/assets/${mascot.file}?preview=${previewCounter}`;
-        nodes.mascotImage.alt = mascot.nameKo;
+      if (nodes.mascotObject) {
+        nodes.mascotObject.data = `../themes/clawad/assets/${mascot.file}?preview=${previewCounter}`;
+        if (typeof nodes.mascotObject.setAttribute === "function") {
+          nodes.mascotObject.setAttribute("aria-label", mascot.nameKo);
+        }
       }
-      if (nodes.mascotName) nodes.mascotName.textContent = mascot.nameKo;
       if (nodes.mascotChoices && nodes.mascotChoices.children) {
         for (const button of nodes.mascotChoices.children) {
           if (button && typeof button.setAttribute === "function") {
@@ -81,17 +113,17 @@
     function start() {
       if (nodes.creativeText && typeof nodes.creativeText.addEventListener === "function") nodes.creativeText.addEventListener("input", render);
       if (nodes.creativeBrand && typeof nodes.creativeBrand.addEventListener === "function") nodes.creativeBrand.addEventListener("input", render);
-      if (nodes.mascotImage && typeof nodes.mascotImage.addEventListener === "function") {
-        nodes.mascotImage.addEventListener("error", () => {
+      if (nodes.mascotObject && typeof nodes.mascotObject.addEventListener === "function") {
+        nodes.mascotObject.addEventListener("error", () => {
           if (nodes.mascotMessage) nodes.mascotMessage.textContent = "마스코트 이미지를 불러오지 못했습니다.";
         });
-        nodes.mascotImage.addEventListener("load", () => {
+        nodes.mascotObject.addEventListener("load", () => {
           if (nodes.mascotMessage) nodes.mascotMessage.textContent = "";
         });
       }
       createMascotChoices();
       render();
-      if (!selectedMascot && model.MASCOTS && model.MASCOTS[0]) selectMascot(model.MASCOTS[0].id);
+      if (!selectedMascot && model.DEFAULT_MASCOT_ID) selectMascot(model.DEFAULT_MASCOT_ID);
     }
 
     return { start, render, selectMascot };

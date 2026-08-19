@@ -49,21 +49,6 @@ function declarationBlocks(source, selector) {
   return [...source.matchAll(new RegExp(`${selectorPattern}\\s*\\{([\\s\\S]*?)\\}`, "g"))].map((match) => match[1]);
 }
 
-function mediaBlock(source, query) {
-  const start = source.indexOf(`@media (${query})`);
-  if (start === -1) return "";
-  const open = source.indexOf("{", start);
-  let depth = 0;
-  for (let index = open; index < source.length; index += 1) {
-    if (source[index] === "{") depth += 1;
-    if (source[index] === "}") {
-      depth -= 1;
-      if (depth === 0) return source.slice(open + 1, index);
-    }
-  }
-  return "";
-}
-
 function parseThemeJson(raw) {
   return JSON.parse(raw.replace(/^\uFEFF/, ""));
 }
@@ -71,22 +56,32 @@ function parseThemeJson(raw) {
 function createFakePreviewDocument() {
   const ids = [
     "creativeText", "creativeBrand", "creativeCopy", "creativeBrandOutput",
-    "textCount", "brandCount", "validationMessage", "mascotImage", "mascotName",
-    "mascotChoices", "mascotMessage",
+    "creativeStrip", "creativeMeta", "textCount", "brandCount", "validationMessage",
+    "mascotObject", "mascotChoices", "mascotMessage",
   ];
   const makeNode = (id) => {
     const listeners = new Map();
+    const customStyles = new Map();
     return {
       id,
       value: "",
       textContent: "",
-      src: "",
-      alt: "",
+      data: "",
+      measuredWidth: id === "creativeMeta" ? 180 : 320,
       dataset: {},
       children: [],
       attributes: {},
+      style: {
+        width: "",
+        setProperty(name, value) { customStyles.set(name, value); },
+        getPropertyValue(name) { return customStyles.get(name) || ""; },
+        removeProperty(name) { customStyles.delete(name); },
+      },
       appendChild(child) {
         this.children.push(child);
+      },
+      getBoundingClientRect() {
+        return { width: this.measuredWidth };
       },
       setAttribute(name, value) {
         this.attributes[name] = String(value);
@@ -105,6 +100,9 @@ function createFakePreviewDocument() {
     nodes,
     document: {
       getElementById: (id) => nodes[id],
+      defaultView: {
+        getComputedStyle: () => ({ columnGap: "8px" }),
+      },
       createElement: (tagName) => {
         const node = makeNode(tagName);
         node.tagName = tagName.toUpperCase();
@@ -126,6 +124,19 @@ test("입력 이벤트마다 정화된 문구와 광고주명이 출력된다", 
   assert.equal(fake.nodes.textCount.textContent, "6 / 120");
 });
 
+test("입력 문구의 자연 폭을 실제 광고판 범위로 제한해 즉시 반영한다", () => {
+  const fake = createFakePreviewDocument();
+  const controller = createPreviewController(fake.document, model);
+  controller.start();
+  assert.equal(fake.nodes.creativeStrip.style.width, "320px");
+  assert.equal(fake.nodes.creativeStrip.style.getPropertyValue("--creative-cutout-width"), "188px");
+
+  fake.nodes.creativeStrip.measuredWidth = 389.2;
+  fake.nodes.creativeText.value = "내용이 길어지면 광고판도 넓어집니다";
+  fake.nodes.creativeText.dispatch("input");
+  assert.equal(fake.nodes.creativeStrip.style.width, "390px");
+});
+
 test("빈 입력으로 시작하면 문구 검증 안내를 표시한다", () => {
   const fake = createFakePreviewDocument();
   const controller = createPreviewController(fake.document, model);
@@ -133,30 +144,29 @@ test("빈 입력으로 시작하면 문구 검증 안내를 표시한다", () =>
   assert.equal(fake.nodes.validationMessage.textContent, "광고 문구를 입력해 주세요.");
 });
 
-test("마스코트 선택은 기존 에셋 경로와 한국어 대체 텍스트를 갱신한다", () => {
+test("마스코트 선택은 object 채널의 에셋 경로와 한국어 이름을 갱신한다", () => {
   const fake = createFakePreviewDocument();
   const controller = createPreviewController(fake.document, model);
   controller.start();
   const mascot = controller.selectMascot("thinking");
   assert.equal(mascot, model.findMascot("thinking"));
-  assert.match(fake.nodes.mascotImage.src, /^\.\.\/themes\/clawad\/assets\/clawad-thinking\.svg\?preview=\d+$/);
-  assert.equal(fake.nodes.mascotImage.alt, "생각 중");
-  assert.equal(fake.nodes.mascotName.textContent, "생각 중");
+  assert.match(fake.nodes.mascotObject.data, /^\.\.\/themes\/clawad\/assets\/clawad-thinking\.svg\?preview=\d+$/);
+  assert.equal(fake.nodes.mascotObject.attributes["aria-label"], "생각 중");
   const selected = fake.nodes.mascotChoices.children.find((button) => button.dataset.mascotId === "thinking");
   assert.equal(selected.textContent, "생각 중");
   assert.equal(selected.attributes["aria-pressed"], "true");
 });
 
-test("마스코트 이미지 로드 오류는 한국어 안내를 표시한다", () => {
+test("마스코트 object 로드 오류는 한국어 안내를 표시한다", () => {
   const fake = createFakePreviewDocument();
   const controller = createPreviewController(fake.document, model);
   controller.start();
-  fake.nodes.mascotImage.dispatch("error");
+  fake.nodes.mascotObject.dispatch("error");
   assert.equal(fake.nodes.mascotMessage.textContent, "마스코트 이미지를 불러오지 못했습니다.");
   assert.equal(fake.nodes.validationMessage.textContent, "광고 문구를 입력해 주세요.");
-  fake.nodes.mascotImage.dispatch("load");
+  fake.nodes.mascotObject.dispatch("load");
   assert.equal(fake.nodes.mascotMessage.textContent, "");
-  fake.nodes.mascotImage.dispatch("error");
+  fake.nodes.mascotObject.dispatch("error");
   controller.selectMascot("thinking");
   assert.equal(fake.nodes.mascotMessage.textContent, "");
 });
@@ -225,9 +235,18 @@ test("텍스트 파일 helper는 선행 BOM을 제거한다", () => {
   }
 });
 
-test("알 수 없는 마스코트 ID는 기본 항목으로 안전하게 대체한다", () => {
-  assert.equal(model.findMascot("does-not-exist"), model.MASCOTS[0]);
+test("기본 마스코트와 알 수 없는 ID의 fallback은 크런치 모드다", () => {
+  assert.equal(model.DEFAULT_MASCOT_ID, "building");
+  assert.equal(model.findMascot("does-not-exist").id, "building");
   assert.equal(model.findMascot(model.MASCOTS[3].id), model.MASCOTS[3]);
+});
+
+test("광고판 폭은 운영 렌더러와 같은 240~420px 범위를 쓴다", () => {
+  assert.equal(model.clampCreativeWidth(1), 240);
+  assert.equal(model.clampCreativeWidth(239.8), 240);
+  assert.equal(model.clampCreativeWidth(287.2), 288);
+  assert.equal(model.clampCreativeWidth(420), 420);
+  assert.equal(model.clampCreativeWidth(900), 420);
 });
 
 test("독립 미리보기 페이지는 입력 접근성, 고정 표기, 로컬 리소스 계약을 제공한다", () => {
@@ -245,13 +264,20 @@ test("독립 미리보기 페이지는 입력 접근성, 고정 표기, 로컬 �
 
   for (const id of [
     "creativeCopy", "creativeBrandOutput", "textCount", "brandCount", "validationMessage",
-    "mascotImage", "mascotName", "mascotChoices", "mascotMessage",
+    "creativeStrip", "creativeMeta", "mascotObject", "mascotChoices", "mascotMessage",
   ]) assert.ok(findById(id), `${id} 출력 요소가 있어야 합니다.`);
+
+  const mascotObject = findById("mascotObject");
+  assert.equal(mascotObject.name, "object");
+  assert.equal(attribute(mascotObject, "type"), "image/svg+xml");
+  assert.equal(attribute(mascotObject, "data"), "../themes/clawad/assets/clawad-building.svg");
+  assert.equal(attribute(mascotObject, "aria-label"), "크런치 모드");
 
   assert.ok(elements.some((element) => attribute(element, "aria-live") && attribute(element, "id") === "validationMessage"));
   assert.ok(elements.some((element) => attribute(element, "aria-live") && attribute(element, "id") === "mascotMessage"));
   assert.ok(elements.some((element) => nodeText(element).includes("[광고]")), "[광고] 표기는 정적 마크업이어야 합니다.");
-  assert.ok(elements.some((element) => nodeText(element).includes("레이아웃 예시")), "고정 적립값은 레이아웃 예시로 밝혀야 합니다.");
+  assert.equal(elements.some((element) => nodeText(element).includes("상태의 마스코트")), false);
+  assert.equal(elements.some((element) => nodeText(element).includes("레이아웃 예시")), false);
 
   const links = findElements(document, (element) => element.name === "link");
   assert.ok(links.some((link) => attribute(link, "rel") === "stylesheet" && attribute(link, "href") === "preview.css"));
@@ -301,20 +327,17 @@ test("두 번째 줄 문구는 미리보기 전용 메타데이터 cutout을 피
   assert.match(cutout, /width\s*:\s*var\(--creative-cutout-width\)/);
   assert.match(cutout, /height\s*:\s*34px/);
   assert.match(cutout, /shape-outside\s*:/);
-  assert.equal(declaration(previewCss, ":root", "--creative-cutout-width"), "244px");
+  assert.equal(declaration(previewCss, ":root", "--creative-cutout-width"), "96px");
 });
 
-test("320px 규칙은 선택 설명만 숨기고 리워드 값과 화살표를 보존한다", () => {
+test("좁은 화면에서도 리워드 값과 화살표를 보존한다", () => {
   const html = readTextFile(path.join(PREVIEW_DIR, "index.html"));
   const previewCss = readTextFile(path.join(PREVIEW_DIR, "preview.css"));
   const document = parseDocument(html);
   const elements = findElements(document, () => true);
   const value = elements.find((element) => attribute(element, "class") === "creative-reward-value");
-  const example = elements.find((element) => attribute(element, "class") === "creative-reward-example");
 
   assert.equal(nodeText(value), "예상 적립 985.3P");
-  assert.equal(nodeText(example), "레이아웃 예시 · ");
-  assert.match(previewCss, /@media\s*\(max-width:\s*360px\)[\s\S]*?\.creative-reward-example\s*\{\s*display\s*:\s*none;/);
   for (const block of declarationBlocks(previewCss, ".creative-strip")) {
     assert.doesNotMatch(block, /overflow\s*:\s*hidden/, "좁은 화면에서도 광고판 부모가 리워드를 자르면 안 됩니다.");
   }
@@ -341,17 +364,21 @@ test("선택한 마스코트 버튼에는 색상 외의 보이는 체크 표식�
   assert.ok(selectedBlocks.some((block) => /content\s*:\s*["']✓\s*["']/.test(block)), "선택 상태에는 체크 표식이 있어야 합니다.");
 });
 
-test("광고판은 밝은 패널 기본값과 어두운 화면의 별도 패널을 제공한다", () => {
+test("페이지는 클로애드 홈페이지의 XP 디자인 시스템을 따른다", () => {
   const previewCss = readTextFile(path.join(PREVIEW_DIR, "preview.css"));
+  assert.match(declaration(previewCss, "body", "background"), /^radial-gradient\(/);
+  assert.equal(declaration(previewCss, "body", "font-size"), "12px");
+  assert.equal(declaration(previewCss, ".xp-window", "width"), "min(920px, 100%)");
+  assert.equal(declaration(previewCss, ".xp-window", "background"), "#ece9d8");
+  assert.equal(declaration(previewCss, ".xp-window", "border"), "3px solid #0831d9");
   assert.equal(declaration(previewCss, ":root", "--strip"), "rgba(255, 255, 255, 0.88)");
   assert.equal(declaration(previewCss, ":root", "--strip-ink"), "#242427");
-  assert.match(previewCss, /@media\s*\(prefers-color-scheme:\s*dark\)[\s\S]*?--strip\s*:\s*rgba\(32, 32, 36, 0\.88\)/);
+  assert.doesNotMatch(previewCss, /prefers-color-scheme:\s*dark/);
 });
 
-test("361px 이상 좁은 화면은 메타데이터 전체 폭을 덮는 cutout을 유지한다", () => {
+test("미리보기 무대는 홈페이지와 같은 하늘색 단색 배경이다", () => {
   const previewCss = readTextFile(path.join(PREVIEW_DIR, "preview.css"));
-  const narrowCss = mediaBlock(previewCss, "max-width: 760px");
-  assert.equal(declaration(narrowCss, ":root", "--creative-cutout-width"), "200px");
+  assert.equal(declaration(previewCss, ".preview-stage", "background"), "#d7edff");
 });
 
 test("밝은 광고판의 문구 밑줄은 패널 위에서 대비되는 색을 쓴다", () => {
