@@ -35,6 +35,17 @@
       const strip = nodes.creativeStrip;
       if (!strip || !strip.style || typeof strip.getBoundingClientRect !== "function") return;
 
+      const cutout = strip.style.getPropertyValue("--creative-cutout-width");
+      const previousWidth = strip.style.width;
+      strip.style.setProperty("--creative-cutout-width", "0px");
+      strip.style.width = "max-content";
+      const naturalWidth = strip.getBoundingClientRect().width;
+      if (model && typeof model.clampCreativeWidth === "function") {
+        strip.style.width = `${model.clampCreativeWidth(naturalWidth)}px`;
+      } else {
+        strip.style.width = previousWidth;
+      }
+
       if (nodes.creativeMeta && typeof nodes.creativeMeta.getBoundingClientRect === "function") {
         const view = documentRef && documentRef.defaultView;
         const computed = view && typeof view.getComputedStyle === "function"
@@ -44,21 +55,12 @@
         const metaWidth = nodes.creativeMeta.getBoundingClientRect().width;
         if (Number.isFinite(metaWidth)) {
           strip.style.setProperty("--creative-cutout-width", `${Math.ceil(metaWidth + (Number.isFinite(gap) ? gap : 0))}px`);
+          return;
         }
       }
 
-      const cutout = strip.style.getPropertyValue("--creative-cutout-width");
-      const previousWidth = strip.style.width;
-      strip.style.setProperty("--creative-cutout-width", "0px");
-      strip.style.width = "max-content";
-      const naturalWidth = strip.getBoundingClientRect().width;
-      strip.style.width = previousWidth;
       if (cutout) strip.style.setProperty("--creative-cutout-width", cutout);
       else strip.style.removeProperty("--creative-cutout-width");
-
-      if (model && typeof model.clampCreativeWidth === "function") {
-        strip.style.width = `${model.clampCreativeWidth(naturalWidth)}px`;
-      }
     }
 
     function scheduleCreativeLayout() {

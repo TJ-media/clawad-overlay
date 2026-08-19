@@ -340,18 +340,19 @@ test("좁은 화면에서도 고정 리워드 예시는 자르지 않고 광고�
 
 test("창 크기가 바뀌면 광고판 자연 폭과 메타데이터 cutout을 다시 계산한다", () => {
   const fake = createFakePreviewDocument();
+  fake.nodes.creativeMeta.getBoundingClientRect = () => ({
+    width: fake.nodes.creativeStrip.style.width === "410px" ? 200 : 120,
+  });
   const controller = createPreviewController(fake.document, model);
   controller.start();
 
   fake.nodes.creativeStrip.measuredWidth = 260;
-  fake.nodes.creativeMeta.measuredWidth = 120;
   fake.document.defaultView.dispatch("resize");
   fake.document.defaultView.flushAnimationFrame();
   assert.equal(fake.nodes.creativeStrip.style.width, "260px");
   assert.equal(fake.nodes.creativeStrip.style.getPropertyValue("--creative-cutout-width"), "128px");
 
   fake.nodes.creativeStrip.measuredWidth = 410;
-  fake.nodes.creativeMeta.measuredWidth = 200;
   fake.document.defaultView.dispatch("resize");
   fake.document.defaultView.flushAnimationFrame();
   assert.equal(fake.nodes.creativeStrip.style.width, "410px");
