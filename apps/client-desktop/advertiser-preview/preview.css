@@ -224,7 +224,6 @@ h2 { margin: 0; font-size: 16px; }
 .creative-brand-output {
   flex: 0 1 auto;
   min-width: 0;
-  max-width: 10ch;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -287,13 +286,11 @@ h2 { margin: 0; font-size: 16px; }
   .preview-stage { min-height: 290px; padding: 12px; }
   .creative-strip { padding: 8px; }
   .creative-meta { gap: 4px; font-size: 9px; }
-  .creative-brand-output { max-width: 6ch; }
 }
 
 @media (max-width: 360px) {
   .creative-strip { padding: 6px 4px; column-gap: 4px; }
   .creative-meta { gap: 2px; }
-  .creative-brand-output { max-width: 4ch; }
 }
 
 @media (prefers-reduced-motion: reduce) {

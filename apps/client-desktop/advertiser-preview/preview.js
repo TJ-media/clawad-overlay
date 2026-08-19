@@ -29,6 +29,7 @@
     ]));
     let previewCounter = 0;
     let selectedMascot = null;
+    let layoutScheduled = false;
 
     function syncCreativeLayout() {
       const strip = nodes.creativeStrip;
@@ -60,6 +61,20 @@
       }
     }
 
+    function scheduleCreativeLayout() {
+      const view = documentRef && documentRef.defaultView;
+      if (!view || typeof view.requestAnimationFrame !== "function") {
+        syncCreativeLayout();
+        return;
+      }
+      if (layoutScheduled) return;
+      layoutScheduled = true;
+      view.requestAnimationFrame(() => {
+        layoutScheduled = false;
+        syncCreativeLayout();
+      });
+    }
+
     function render() {
       if (!nodes.creativeText || !nodes.creativeBrand || !model || typeof model.buildPreviewState !== "function") return null;
       const state = model.buildPreviewState({
@@ -83,6 +98,7 @@
       if (nodes.mascotMessage) nodes.mascotMessage.textContent = "";
       if (nodes.mascotObject) {
         nodes.mascotObject.data = `../themes/clawad/assets/${mascot.file}?preview=${previewCounter}`;
+        nodes.mascotObject.textContent = `${mascot.nameKo} 마스코트`;
         if (typeof nodes.mascotObject.setAttribute === "function") {
           nodes.mascotObject.setAttribute("aria-label", mascot.nameKo);
         }
@@ -111,8 +127,10 @@
     }
 
     function start() {
+      const view = documentRef && documentRef.defaultView;
       if (nodes.creativeText && typeof nodes.creativeText.addEventListener === "function") nodes.creativeText.addEventListener("input", render);
       if (nodes.creativeBrand && typeof nodes.creativeBrand.addEventListener === "function") nodes.creativeBrand.addEventListener("input", render);
+      if (view && typeof view.addEventListener === "function") view.addEventListener("resize", scheduleCreativeLayout);
       if (nodes.mascotObject && typeof nodes.mascotObject.addEventListener === "function") {
         nodes.mascotObject.addEventListener("error", () => {
           if (nodes.mascotMessage) nodes.mascotMessage.textContent = "마스코트 이미지를 불러오지 못했습니다.";

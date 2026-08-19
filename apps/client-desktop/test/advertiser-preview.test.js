@@ -54,6 +54,8 @@ function parseThemeJson(raw) {
 }
 
 function createFakePreviewDocument() {
+  const viewListeners = new Map();
+  let animationFrame = null;
   const ids = [
     "creativeText", "creativeBrand", "creativeCopy", "creativeBrandOutput",
     "creativeStrip", "creativeMeta", "textCount", "brandCount", "validationMessage",
@@ -102,6 +104,22 @@ function createFakePreviewDocument() {
       getElementById: (id) => nodes[id],
       defaultView: {
         getComputedStyle: () => ({ columnGap: "8px" }),
+        addEventListener(type, listener) {
+          viewListeners.set(type, listener);
+        },
+        dispatch(type) {
+          const listener = viewListeners.get(type);
+          if (listener) listener({ type, target: this });
+        },
+        requestAnimationFrame(callback) {
+          animationFrame = callback;
+          return 1;
+        },
+        flushAnimationFrame() {
+          const callback = animationFrame;
+          animationFrame = null;
+          if (callback) callback();
+        },
       },
       createElement: (tagName) => {
         const node = makeNode(tagName);
@@ -152,6 +170,7 @@ test("마스코트 선택은 object 채널의 에셋 경로와 한국어 이름�
   assert.equal(mascot, model.findMascot("thinking"));
   assert.match(fake.nodes.mascotObject.data, /^\.\.\/themes\/clawad\/assets\/clawad-thinking\.svg\?preview=\d+$/);
   assert.equal(fake.nodes.mascotObject.attributes["aria-label"], "생각 중");
+  assert.equal(fake.nodes.mascotObject.textContent, "생각 중 마스코트");
   const selected = fake.nodes.mascotChoices.children.find((button) => button.dataset.mascotId === "thinking");
   assert.equal(selected.textContent, "생각 중");
   assert.equal(selected.attributes["aria-pressed"], "true");
@@ -314,6 +333,29 @@ test("좁은 화면에서도 고정 리워드 예시는 자르지 않고 광고�
     assert.doesNotMatch(block, /(?:max-width|overflow|text-overflow)\s*:/, "리워드 예시를 반응형에서 자르면 안 됩니다.");
   }
   assert.ok(declarationBlocks(previewCss, ".creative-brand-output").some((block) => /text-overflow\s*:\s*ellipsis/.test(block)), "공간이 부족하면 광고주명이 먼저 말줄임되어야 합니다.");
+  for (const block of declarationBlocks(previewCss, ".creative-brand-output")) {
+    assert.doesNotMatch(block, /max-width\s*:/, "광고주명의 자연 폭이 광고판 가변 폭 계산에 반영되어야 합니다.");
+  }
+});
+
+test("창 크기가 바뀌면 광고판 자연 폭과 메타데이터 cutout을 다시 계산한다", () => {
+  const fake = createFakePreviewDocument();
+  const controller = createPreviewController(fake.document, model);
+  controller.start();
+
+  fake.nodes.creativeStrip.measuredWidth = 260;
+  fake.nodes.creativeMeta.measuredWidth = 120;
+  fake.document.defaultView.dispatch("resize");
+  fake.document.defaultView.flushAnimationFrame();
+  assert.equal(fake.nodes.creativeStrip.style.width, "260px");
+  assert.equal(fake.nodes.creativeStrip.style.getPropertyValue("--creative-cutout-width"), "128px");
+
+  fake.nodes.creativeStrip.measuredWidth = 410;
+  fake.nodes.creativeMeta.measuredWidth = 200;
+  fake.document.defaultView.dispatch("resize");
+  fake.document.defaultView.flushAnimationFrame();
+  assert.equal(fake.nodes.creativeStrip.style.width, "410px");
+  assert.equal(fake.nodes.creativeStrip.style.getPropertyValue("--creative-cutout-width"), "208px");
 });
 
 test("두 번째 줄 문구는 미리보기 전용 메타데이터 cutout을 피한다", () => {
