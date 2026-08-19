@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>클로애드 소재 미리보기</title>
+    <link rel="stylesheet" href="preview.css">
+  </head>
+  <body>
+    <div class="xp-window">
+      <header class="xp-titlebar">
+        <span class="xp-mark" aria-hidden="true">✦</span>
+        <h1>클로애드 소재 미리보기</h1>
+        <div class="xp-controls" aria-hidden="true">
+          <span>−</span><span>□</span><span>×</span>
+        </div>
+      </header>
+      <nav class="xp-menu" aria-label="창 메뉴"><span>파일</span><span>도움말</span></nav>
+
+      <main class="page-content">
+        <section class="entry-panel" aria-labelledby="entryTitle">
+          <p class="eyebrow">Creative preview</p>
+          <h2 id="entryTitle">소재를 입력해 보세요</h2>
+          <p class="helper-copy">입력 내용은 이 브라우저 화면에서만 미리보기로 표시됩니다.</p>
+
+          <div class="field-group">
+            <label for="creativeText">광고 문구</label>
+            <textarea id="creativeText" maxlength="120" aria-describedby="textCount validationMessage" placeholder="개발자를 위한 메시지를 입력하세요."></textarea>
+            <span id="textCount" class="count-copy" aria-live="polite">0 / 120</span>
+          </div>
+
+          <div class="field-group">
+            <label for="creativeBrand">광고주명</label>
+            <input id="creativeBrand" maxlength="60" aria-describedby="brandCount" placeholder="광고주명">
+            <span id="brandCount" class="count-copy" aria-live="polite">0 / 60</span>
+          </div>
+          <p id="validationMessage" class="validation-copy" aria-live="polite"></p>
+        </section>
+
+        <section class="preview-panel" aria-labelledby="previewTitle">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Overlay surface</p>
+              <h2 id="previewTitle">데스크톱 표시 미리보기</h2>
+            </div>
+            <span class="xp-pill">실제 크기</span>
+          </div>
+
+          <div class="preview-stage">
+            <img id="mascotImage" class="mascot-image" src="../themes/clawad/assets/clawad-idle.svg" alt="대기">
+            <p class="mascot-copy"><span id="mascotName">대기</span> 상태의 마스코트</p>
+            <p id="mascotMessage" class="mascot-message" aria-live="polite"></p>
+            <div class="creative-strip" aria-label="광고판 미리보기">
+              <span class="creative-label">[광고]</span>
+              <span id="creativeCopy" class="creative-copy"></span>
+              <div class="creative-meta">
+                <span id="creativeBrandOutput" class="creative-brand-output"></span>
+                <span class="creative-reward"><span class="creative-reward-example">레이아웃 예시 · </span><span class="creative-reward-value">예상 적립 985.3P</span></span>
+                <span aria-hidden="true">↗</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="mascot-panel" aria-labelledby="mascotTitle">
+          <div>
+            <p class="eyebrow">Mascot state</p>
+            <h2 id="mascotTitle">마스코트 상태</h2>
+          </div>
+          <div id="mascotChoices" class="mascot-choices" aria-label="마스코트 상태 선택"></div>
+        </section>
+      </main>
+    </div>
+    <footer class="xp-taskbar"><span class="start-button">시작</span><span class="task-button">클로애드 소재 미리보기</span></footer>
+    <script src="preview-model.js"></script>
+    <script src="preview.js"></script>
+  </body>
+</html>

@@ -1,6 +1,6 @@
 # 已知限制
 
-[返回 README](../../README.zh-CN.md)
+[返回 Claw-Ad README](../../README.md)
 
 | 限制 | 说明 |
 |------|------|
