@@ -149,7 +149,7 @@ marker 与 routing identity 的 profile 专属 SSH 入口回传 official hook �
 
 参考：
 
-- [`README.zh-CN.md`](../../README.zh-CN.md)
+- [Claw-Ad README](../../README.md)
 
 这句话对很多场景是成立的，但没有把“Codex native Windows”和“Codex in WSL2 + 独立 Linux home”区分开来。
 
@@ -216,7 +216,7 @@ OpenAI 官方文档：
 
 仓库内相关文件：
 
-- [`README.zh-CN.md`](../../README.zh-CN.md)
+- [Claw-Ad README](../../README.md)
 - [`docs/guides/setup-guide.zh-CN.md`](./setup-guide.zh-CN.md)
 - [`agents/codex.js`](../../agents/codex.js)
 - [`agents/codex-log-monitor.js`](../../agents/codex-log-monitor.js)
