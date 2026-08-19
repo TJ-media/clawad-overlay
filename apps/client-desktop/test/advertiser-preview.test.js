@@ -1,0 +1,360 @@
+"use strict";
+
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const test = require("node:test");
+const { parseDocument } = require("htmlparser2");
+
+const model = require("../advertiser-preview/preview-model");
+const { createPreviewController } = require("../advertiser-preview/preview");
+
+const THEME_PATH = path.join(__dirname, "..", "themes", "clawad", "theme.json");
+const ASSET_DIR = path.join(__dirname, "..", "themes", "clawad", "assets");
+const PREVIEW_DIR = path.join(__dirname, "..", "advertiser-preview");
+
+function readTextFile(filePath) {
+  return fs.readFileSync(filePath, "utf8").replace(/^\uFEFF/, "");
+}
+
+function findElements(node, predicate, found = []) {
+  if (node && node.name && predicate(node)) found.push(node);
+  for (const child of (node && node.children) || []) findElements(child, predicate, found);
+  return found;
+}
+
+function nodeText(node) {
+  return ((node && node.children) || []).map((child) => {
+    if (child.type === "text") return child.data;
+    return nodeText(child);
+  }).join("");
+}
+
+function attribute(node, name) {
+  return node && node.attribs ? node.attribs[name] : undefined;
+}
+
+function declaration(source, selector, property) {
+  const selectorPattern = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const block = source.match(new RegExp(`${selectorPattern}\\s*\\{([\\s\\S]*?)\\}`));
+  if (!block) return undefined;
+  const propertyPattern = property.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = block[1].match(new RegExp(`${propertyPattern}\\s*:\\s*([^;]+);`));
+  return match ? match[1].trim() : undefined;
+}
+
+function declarationBlocks(source, selector) {
+  const selectorPattern = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return [...source.matchAll(new RegExp(`${selectorPattern}\\s*\\{([\\s\\S]*?)\\}`, "g"))].map((match) => match[1]);
+}
+
+function mediaBlock(source, query) {
+  const start = source.indexOf(`@media (${query})`);
+  if (start === -1) return "";
+  const open = source.indexOf("{", start);
+  let depth = 0;
+  for (let index = open; index < source.length; index += 1) {
+    if (source[index] === "{") depth += 1;
+    if (source[index] === "}") {
+      depth -= 1;
+      if (depth === 0) return source.slice(open + 1, index);
+    }
+  }
+  return "";
+}
+
+function parseThemeJson(raw) {
+  return JSON.parse(raw.replace(/^\uFEFF/, ""));
+}
+
+function createFakePreviewDocument() {
+  const ids = [
+    "creativeText", "creativeBrand", "creativeCopy", "creativeBrandOutput",
+    "textCount", "brandCount", "validationMessage", "mascotImage", "mascotName",
+    "mascotChoices", "mascotMessage",
+  ];
+  const makeNode = (id) => {
+    const listeners = new Map();
+    return {
+      id,
+      value: "",
+      textContent: "",
+      src: "",
+      alt: "",
+      dataset: {},
+      children: [],
+      attributes: {},
+      appendChild(child) {
+        this.children.push(child);
+      },
+      setAttribute(name, value) {
+        this.attributes[name] = String(value);
+      },
+      addEventListener(type, listener) {
+        listeners.set(type, listener);
+      },
+      dispatch(type) {
+        const listener = listeners.get(type);
+        if (listener) listener({ type, target: this });
+      },
+    };
+  };
+  const nodes = Object.fromEntries(ids.map((id) => [id, makeNode(id)]));
+  return {
+    nodes,
+    document: {
+      getElementById: (id) => nodes[id],
+      createElement: (tagName) => {
+        const node = makeNode(tagName);
+        node.tagName = tagName.toUpperCase();
+        return node;
+      },
+    },
+  };
+}
+
+test("입력 이벤트마다 정화된 문구와 광고주명이 출력된다", () => {
+  const fake = createFakePreviewDocument();
+  const controller = createPreviewController(fake.document, model);
+  controller.start();
+  fake.nodes.creativeText.value = "첫줄\n둘째줄";
+  fake.nodes.creativeBrand.value = "테스트 광고주";
+  fake.nodes.creativeText.dispatch("input");
+  assert.equal(fake.nodes.creativeCopy.textContent, "첫줄 둘째줄");
+  assert.equal(fake.nodes.creativeBrandOutput.textContent, "테스트 광고주");
+  assert.equal(fake.nodes.textCount.textContent, "6 / 120");
+});
+
+test("빈 입력으로 시작하면 문구 검증 안내를 표시한다", () => {
+  const fake = createFakePreviewDocument();
+  const controller = createPreviewController(fake.document, model);
+  controller.start();
+  assert.equal(fake.nodes.validationMessage.textContent, "광고 문구를 입력해 주세요.");
+});
+
+test("마스코트 선택은 기존 에셋 경로와 한국어 대체 텍스트를 갱신한다", () => {
+  const fake = createFakePreviewDocument();
+  const controller = createPreviewController(fake.document, model);
+  controller.start();
+  const mascot = controller.selectMascot("thinking");
+  assert.equal(mascot, model.findMascot("thinking"));
+  assert.match(fake.nodes.mascotImage.src, /^\.\.\/themes\/clawad\/assets\/clawad-thinking\.svg\?preview=\d+$/);
+  assert.equal(fake.nodes.mascotImage.alt, "생각 중");
+  assert.equal(fake.nodes.mascotName.textContent, "생각 중");
+  const selected = fake.nodes.mascotChoices.children.find((button) => button.dataset.mascotId === "thinking");
+  assert.equal(selected.textContent, "생각 중");
+  assert.equal(selected.attributes["aria-pressed"], "true");
+});
+
+test("마스코트 이미지 로드 오류는 한국어 안내를 표시한다", () => {
+  const fake = createFakePreviewDocument();
+  const controller = createPreviewController(fake.document, model);
+  controller.start();
+  fake.nodes.mascotImage.dispatch("error");
+  assert.equal(fake.nodes.mascotMessage.textContent, "마스코트 이미지를 불러오지 못했습니다.");
+  assert.equal(fake.nodes.validationMessage.textContent, "광고 문구를 입력해 주세요.");
+  fake.nodes.mascotImage.dispatch("load");
+  assert.equal(fake.nodes.mascotMessage.textContent, "");
+  fake.nodes.mascotImage.dispatch("error");
+  controller.selectMascot("thinking");
+  assert.equal(fake.nodes.mascotMessage.textContent, "");
+});
+
+test("광고 문구는 제어문자와 연속 공백을 정리하고 120자로 제한한다", () => {
+  const raw = `  첫줄\n\u001b[31m둘째줄  ${"가".repeat(140)}`;
+  const state = model.buildPreviewState({ text: raw, brand: " 브랜드\t이름 " });
+  assert.equal(state.text.includes("\n"), false);
+  assert.equal(state.text.includes("\u001b"), false);
+  assert.equal([...state.text].length, 120);
+  assert.equal(state.brand, "브랜드 이름");
+  assert.equal(state.textLength, 120);
+  assert.equal(state.brandLength, 6);
+  assert.equal(state.textEmpty, false);
+});
+
+test("입력 모델은 문자열이 아닌 값과 빈 문구를 안전하게 처리한다", () => {
+  assert.equal(model.sanitizeField(null, 10), "");
+  assert.deepEqual(model.buildPreviewState({ text: null, brand: 42 }), {
+    text: "",
+    brand: "",
+    textLength: 0,
+    brandLength: 0,
+    textEmpty: true,
+  });
+});
+
+test("마스코트 manifest는 테마의 모든 고유 에셋을 한국어 항목으로 제공한다", () => {
+  const theme = parseThemeJson(readTextFile(THEME_PATH));
+  const files = new Set();
+  for (const values of Object.values(theme.states)) {
+    for (const file of values) files.add(file);
+  }
+  for (const tier of [...theme.workingTiers, ...theme.jugglingTiers]) files.add(tier.file);
+  for (const reaction of Object.values(theme.reactions)) {
+    if (reaction.file) files.add(reaction.file);
+    for (const file of reaction.files || []) files.add(file);
+  }
+  for (const values of Object.values(theme.miniMode.states)) {
+    for (const file of values) files.add(file);
+  }
+
+  assert.equal(model.MASCOTS.length, 25);
+  assert.deepEqual(model.MASCOTS.map(({ file }) => file).sort(), [...files].sort());
+  for (const mascot of model.MASCOTS) {
+    assert.match(mascot.nameKo, /[가-힣]/);
+    assert.match(mascot.categoryKo, /[가-힣]/);
+    assert.equal(typeof mascot.id, "string");
+    assert.equal(typeof mascot.compact, "boolean");
+    assert.equal(fs.existsSync(path.join(ASSET_DIR, mascot.file)), true);
+  }
+});
+
+test("테마 manifest 파서는 선행 BOM을 제거한다", () => {
+  assert.deepEqual(parseThemeJson('\uFEFF{"states":{}}'), { states: {} });
+});
+
+test("텍스트 파일 helper는 선행 BOM을 제거한다", () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "clawad-preview-bom-"));
+  const tempFile = path.join(tempDir, "fixture.txt");
+  try {
+    fs.writeFileSync(tempFile, "\uFEFF미리보기", "utf8");
+    assert.equal(readTextFile(tempFile), "미리보기");
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("알 수 없는 마스코트 ID는 기본 항목으로 안전하게 대체한다", () => {
+  assert.equal(model.findMascot("does-not-exist"), model.MASCOTS[0]);
+  assert.equal(model.findMascot(model.MASCOTS[3].id), model.MASCOTS[3]);
+});
+
+test("독립 미리보기 페이지는 입력 접근성, 고정 표기, 로컬 리소스 계약을 제공한다", () => {
+  const html = readTextFile(path.join(PREVIEW_DIR, "index.html"));
+  const document = parseDocument(html);
+  const elements = findElements(document, () => true);
+  const findById = (id) => elements.find((element) => attribute(element, "id") === id);
+  const labels = findElements(document, (element) => element.name === "label");
+
+  for (const [id, maxLength] of [["creativeText", "120"], ["creativeBrand", "60"]]) {
+    assert.ok(findById(id), `${id} 입력이 있어야 합니다.`);
+    assert.equal(attribute(findById(id), "maxlength"), maxLength);
+    assert.ok(labels.some((label) => attribute(label, "for") === id), `${id}에 연결된 label이 있어야 합니다.`);
+  }
+
+  for (const id of [
+    "creativeCopy", "creativeBrandOutput", "textCount", "brandCount", "validationMessage",
+    "mascotImage", "mascotName", "mascotChoices", "mascotMessage",
+  ]) assert.ok(findById(id), `${id} 출력 요소가 있어야 합니다.`);
+
+  assert.ok(elements.some((element) => attribute(element, "aria-live") && attribute(element, "id") === "validationMessage"));
+  assert.ok(elements.some((element) => attribute(element, "aria-live") && attribute(element, "id") === "mascotMessage"));
+  assert.ok(elements.some((element) => nodeText(element).includes("[광고]")), "[광고] 표기는 정적 마크업이어야 합니다.");
+  assert.ok(elements.some((element) => nodeText(element).includes("레이아웃 예시")), "고정 적립값은 레이아웃 예시로 밝혀야 합니다.");
+
+  const links = findElements(document, (element) => element.name === "link");
+  assert.ok(links.some((link) => attribute(link, "rel") === "stylesheet" && attribute(link, "href") === "preview.css"));
+  const scripts = findElements(document, (element) => element.name === "script");
+  assert.deepEqual(scripts.map((script) => attribute(script, "src")), ["preview-model.js", "preview.js"]);
+  assert.ok(scripts.every((script) => nodeText(script).trim() === ""), "입력값을 HTML 문자열로 삽입하는 인라인 템플릿을 두지 않습니다.");
+});
+
+test("미리보기 광고판은 운영 오버레이의 두 줄 Grid와 잘림 우선순위를 유지한다", () => {
+  const runtimeCss = readTextFile(path.join(__dirname, "..", "src", "clawad-ad.html"));
+  const previewCss = readTextFile(path.join(PREVIEW_DIR, "preview.css"));
+  const contracts = [
+    ["#strip", ".creative-strip", "grid-template-columns", "auto minmax(0, 1fr) auto"],
+    ["#strip", ".creative-strip", "grid-template-rows", "repeat(2, 17px)"],
+    ["#text", ".creative-copy", "line-height", "17px"],
+    ["#text", ".creative-copy", "max-height", "34px"],
+    ["#meta", ".creative-meta", "grid-row", "2"],
+    ["#brand", ".creative-brand-output", "text-overflow", "ellipsis"],
+    ["#reward", ".creative-reward", "white-space", "nowrap"],
+  ];
+
+  for (const [runtimeSelector, previewSelector, property, expected] of contracts) {
+    assert.equal(declaration(runtimeCss, runtimeSelector, property), expected, `${runtimeSelector}의 ${property} 기준이 바뀌었습니다.`);
+    assert.equal(declaration(previewCss, previewSelector, property), expected, `${previewSelector}가 운영 광고판 ${property} 계약을 지켜야 합니다.`);
+  }
+});
+
+test("좁은 화면에서도 고정 리워드 예시는 자르지 않고 광고주명만 줄일 수 있다", () => {
+  const previewCss = readTextFile(path.join(PREVIEW_DIR, "preview.css"));
+  const rewardBlocks = declarationBlocks(previewCss, ".creative-reward");
+
+  assert.ok(rewardBlocks.length > 0, "리워드 표기 스타일이 있어야 합니다.");
+  for (const block of rewardBlocks) {
+    assert.doesNotMatch(block, /(?:max-width|overflow|text-overflow)\s*:/, "리워드 예시를 반응형에서 자르면 안 됩니다.");
+  }
+  assert.ok(declarationBlocks(previewCss, ".creative-brand-output").some((block) => /text-overflow\s*:\s*ellipsis/.test(block)), "공간이 부족하면 광고주명이 먼저 말줄임되어야 합니다.");
+});
+
+test("두 번째 줄 문구는 미리보기 전용 메타데이터 cutout을 피한다", () => {
+  const previewCss = readTextFile(path.join(PREVIEW_DIR, "preview.css"));
+  const cutoutBlocks = declarationBlocks(previewCss, ".creative-copy::before");
+
+  assert.ok(cutoutBlocks.length > 0, "두 번째 줄 cutout 의사 요소가 있어야 합니다.");
+  const cutout = cutoutBlocks[0];
+  assert.match(cutout, /content\s*:\s*""/);
+  assert.match(cutout, /float\s*:\s*right/);
+  assert.match(cutout, /width\s*:\s*var\(--creative-cutout-width\)/);
+  assert.match(cutout, /height\s*:\s*34px/);
+  assert.match(cutout, /shape-outside\s*:/);
+  assert.equal(declaration(previewCss, ":root", "--creative-cutout-width"), "244px");
+});
+
+test("320px 규칙은 선택 설명만 숨기고 리워드 값과 화살표를 보존한다", () => {
+  const html = readTextFile(path.join(PREVIEW_DIR, "index.html"));
+  const previewCss = readTextFile(path.join(PREVIEW_DIR, "preview.css"));
+  const document = parseDocument(html);
+  const elements = findElements(document, () => true);
+  const value = elements.find((element) => attribute(element, "class") === "creative-reward-value");
+  const example = elements.find((element) => attribute(element, "class") === "creative-reward-example");
+
+  assert.equal(nodeText(value), "예상 적립 985.3P");
+  assert.equal(nodeText(example), "레이아웃 예시 · ");
+  assert.match(previewCss, /@media\s*\(max-width:\s*360px\)[\s\S]*?\.creative-reward-example\s*\{\s*display\s*:\s*none;/);
+  for (const block of declarationBlocks(previewCss, ".creative-strip")) {
+    assert.doesNotMatch(block, /overflow\s*:\s*hidden/, "좁은 화면에서도 광고판 부모가 리워드를 자르면 안 됩니다.");
+  }
+  assert.ok(elements.some((element) => nodeText(element) === "↗"), "고정 리워드 옆 화살표가 있어야 합니다.");
+});
+
+test("정적 미리보기는 네트워크·저장소·HTML 주입 API와 차단기 위험 토큰을 쓰지 않는다", () => {
+  const files = ["index.html", "preview.css", "preview-model.js", "preview.js"];
+  const source = files.map((file) => readTextFile(path.join(PREVIEW_DIR, file))).join("\n");
+  assert.doesNotMatch(source, /\b(?:fetch|XMLHttpRequest|WebSocket|sendBeacon|localStorage|sessionStorage|innerHTML|outerHTML|insertAdjacentHTML)\b/);
+  assert.doesNotMatch(source, /document\s*\.\s*cookie/);
+
+  const document = parseDocument(readTextFile(path.join(PREVIEW_DIR, "index.html")));
+  for (const element of findElements(document, () => true)) {
+    for (const token of [attribute(element, "class"), attribute(element, "id")].filter(Boolean).flatMap((value) => value.split(/\s+/))) {
+      assert.doesNotMatch(token, /(^|[-_])ad(?:[-_]|$)/i, `${token}은 차단기 위험 토큰입니다.`);
+    }
+  }
+});
+
+test("선택한 마스코트 버튼에는 색상 외의 보이는 체크 표식이 있다", () => {
+  const previewCss = readTextFile(path.join(PREVIEW_DIR, "preview.css"));
+  const selectedBlocks = declarationBlocks(previewCss, ".mascot-choices button[aria-pressed=\"true\"]::before");
+  assert.ok(selectedBlocks.some((block) => /content\s*:\s*["']✓\s*["']/.test(block)), "선택 상태에는 체크 표식이 있어야 합니다.");
+});
+
+test("광고판은 밝은 패널 기본값과 어두운 화면의 별도 패널을 제공한다", () => {
+  const previewCss = readTextFile(path.join(PREVIEW_DIR, "preview.css"));
+  assert.equal(declaration(previewCss, ":root", "--strip"), "rgba(255, 255, 255, 0.88)");
+  assert.equal(declaration(previewCss, ":root", "--strip-ink"), "#242427");
+  assert.match(previewCss, /@media\s*\(prefers-color-scheme:\s*dark\)[\s\S]*?--strip\s*:\s*rgba\(32, 32, 36, 0\.88\)/);
+});
+
+test("361px 이상 좁은 화면은 메타데이터 전체 폭을 덮는 cutout을 유지한다", () => {
+  const previewCss = readTextFile(path.join(PREVIEW_DIR, "preview.css"));
+  const narrowCss = mediaBlock(previewCss, "max-width: 760px");
+  assert.equal(declaration(narrowCss, ":root", "--creative-cutout-width"), "200px");
+});
+
+test("밝은 광고판의 문구 밑줄은 패널 위에서 대비되는 색을 쓴다", () => {
+  const previewCss = readTextFile(path.join(PREVIEW_DIR, "preview.css"));
+  assert.equal(declaration(previewCss, ".creative-copy", "text-decoration-color"), "var(--strip-muted)");
+});
