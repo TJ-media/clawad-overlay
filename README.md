@@ -1,29 +1,55 @@
-# clawad-overlay
+# Claw-Ad Desktop Overlay
 
-ClawAd의 **데스크탑 오버레이 클라이언트**. 화면 최상단에 항상 떠 있는 캐릭터(데스크펫)와 그 아래 텍스트 광고 한 줄을 렌더링한다. 터미널 statusline과 달리 특정 앱에 종속되지 않으므로, 어떤 에디터/앱을 쓰는 동안에도 광고를 노출할 수 있다.
+<p align="center">
+  <a href="https://github.com/TJ-media/clawad-overlay/releases/latest"><img src="https://img.shields.io/github/v/release/TJ-media/clawad-overlay?label=release&color=coral" alt="최신 릴리스" /></a>
+  <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS-2563eb" alt="지원 플랫폼" />
+  <img src="https://img.shields.io/badge/stage-Closed%20Alpha-f59e0b" alt="Closed Alpha" />
+  <img src="https://img.shields.io/badge/code-AGPL--3.0-663399" alt="AGPL-3.0" />
+</p>
 
-> 상태: 초기 스켈레톤 (WIP). 렌더링 표면만 담당하며, 광고·정산 로직은 포함하지 않는다.
+<p align="center">
+  <img src="docs/assets/clawad-overlay-demo.gif" alt="Claude Code와 Codex 작업 중 애드워드 아래에 광고와 예상 적립이 표시되는 Claw-Ad Desktop Overlay" width="900" />
+</p>
 
-## 라이선스
+Claw-Ad의 데스크톱 오버레이 클라이언트입니다.
 
-- **소스코드: AGPL-3.0** ([LICENSE](LICENSE)). 이 저장소의 코드로 파생물을 만들거나 네트워크로 서비스하면 AGPL-3.0 조건(소스 제공 의무 포함)이 적용된다.
-- **ClawAd 마스코트 아트워크는 AGPL 대상이 아니다** — © ClawAd, All rights reserved. 코드는 열되 캐릭터 IP는 별도로 보유한다. (upstream clawd-on-desk의 "코드 AGPL / 아트 별도" 구분과 동일한 방식.)
+Claude Code·Codex 사용 중 에이전트 상태를 시각화하고, Claw-Ad 서버에서 전달받은 스폰서 메시지를 캐릭터 아래에 `[광고]` 표기와 함께 표시합니다.
 
-## 유래 (attribution)
+> [!IMPORTANT]
+> Claw-Ad는 현재 Closed Alpha로 운영 중입니다. 전체 서비스 소개와 설치 방법은 [메인 저장소](https://github.com/TJ-media/clawad)를 참고하세요.
 
-이 프로젝트는 [clawd-on-desk](https://github.com/rullerzhou-afk/clawd-on-desk) (AGPL-3.0)의 코드를 포크·활용해 데스크펫 렌더링을 구현한다. upstream 코드를 포함할 때는 원저작권 표시와 변경 고지를 보존한다. clawd-on-desk는 Anthropic과 무관한 비공식 팬 프로젝트이며, 본 저장소 또한 Anthropic 공식 산출물이 아니다.
+## 주요 기능
 
-## 아키텍처 경계 (중요)
+- AI 코딩 에이전트의 작업 상태에 반응하는 자체 마스코트 **애드워드**
+- 캐릭터 아래 한 줄로 표시되는 `[광고]` 스폰서 메시지와 예상 적립
+- 캐릭터·광고판 이동, 크기 조절, 미니 모드와 트레이 메뉴
+- 프롬프트·소스코드·파일명·프로젝트 경로를 서버로 보내지 않는 최소 수집 설계
+- Windows x64·ARM64, macOS x64·Apple Silicon 지원
 
-이 클라이언트는 **ClawAd 서버와 네트워크 API(HTTP)로만** 통신한다.
-
-```
-clawad-overlay (이 레포, AGPL-3.0)  ──HTTP──▶  ClawAd 서버 (별도 비공개 저장소)
-  · 데스크펫/오버레이 렌더링                     · 광고 서버 / 4원장 / 리워드 / 정산
-```
-
-ClawAd 서버(광고·원장·리워드·정산)는 **별개의 독립 프로그램**이며 이 저장소에 포함되지 않고 AGPL 대상도 아니다. 카피레프트 경계는 이 클라이언트 안에 갇혀 있어야 한다. 상세 규칙은 [docs/BOUNDARY.md](docs/BOUNDARY.md).
+일반 사용자는 저장소를 직접 빌드하지 않고 [공식 설치 안내](https://clawad.whatsup.house/install)의 Claw-Ad CLI를 사용합니다.
 
 ## 개발
 
-(추후 채움 — Electron 셸, 빌드, 실행 방법)
+Electron 앱은 [`apps/client-desktop`](apps/client-desktop)에 있습니다.
+
+```bash
+cd apps/client-desktop
+npm ci
+npm start
+npm test
+```
+
+구조·빌드·테스트와 제품 불변식은 [한국어 개발 README](apps/client-desktop/README.md)를 확인하세요.
+
+## AGPL과 upstream
+
+이 앱은 [clawd-on-desk](https://github.com/rullerzhou-afk/clawd-on-desk)의 AGPL-3.0 코드를 기반으로 Claw-Ad용으로 커스터마이징했습니다. upstream의 저작권·라이선스 고지는 보존하지만, upstream의 기능 목록은 Claw-Ad의 지원 약속이 아닙니다.
+
+- 기준 커밋과 변경 내역: [FORK.md](apps/client-desktop/FORK.md)
+- 제3자 고지: [NOTICE.md](apps/client-desktop/NOTICE.md)
+- 저장소 간 경계: [docs/BOUNDARY.md](docs/BOUNDARY.md)
+- 보존된 upstream README: [UPSTREAM.md](apps/client-desktop/UPSTREAM.md)
+
+소스코드는 [AGPL-3.0](LICENSE), Claw-Ad 마스코트·아이콘·테마 아트워크는 각 자산 디렉터리의 별도 라이선스를 따릅니다. Claw-Ad 서버는 이 저장소에 포함되지 않은 독립 시스템입니다.
+
+Claw-Ad는 Anthropic 또는 Claude와 제휴·후원 관계가 없는 독립 서비스입니다.
