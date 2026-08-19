@@ -5,6 +5,9 @@
   if (typeof module === "object" && module.exports) module.exports = api;
   if (root) root.ClawAdPreviewModel = api;
 })(typeof globalThis === "object" ? globalThis : this, () => {
+  const DEFAULT_MASCOT_ID = "building";
+  const MIN_CREATIVE_WIDTH = 240;
+  const MAX_CREATIVE_WIDTH = 420;
   const MASCOTS = Object.freeze([
     { id: "idle", nameKo: "대기", categoryKo: "기본", file: "clawad-idle.svg", compact: false },
     { id: "thinking", nameKo: "생각 중", categoryKo: "기본", file: "clawad-thinking.svg", compact: false },
@@ -55,8 +58,21 @@
   }
 
   function findMascot(id) {
-    return MASCOTS.find((mascot) => mascot.id === id) || MASCOTS[0];
+    return MASCOTS.find((mascot) => mascot.id === id)
+      || MASCOTS.find((mascot) => mascot.id === DEFAULT_MASCOT_ID);
   }
 
-  return { sanitizeField, buildPreviewState, MASCOTS, findMascot };
+  function clampCreativeWidth(naturalWidth) {
+    if (!Number.isFinite(naturalWidth) || naturalWidth <= 0) return MAX_CREATIVE_WIDTH;
+    return Math.min(MAX_CREATIVE_WIDTH, Math.max(MIN_CREATIVE_WIDTH, Math.ceil(naturalWidth)));
+  }
+
+  return {
+    sanitizeField,
+    buildPreviewState,
+    clampCreativeWidth,
+    DEFAULT_MASCOT_ID,
+    MASCOTS,
+    findMascot,
+  };
 });
