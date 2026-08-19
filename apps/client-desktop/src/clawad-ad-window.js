@@ -360,8 +360,7 @@ module.exports = function initClawadAdWindow(ctx) {
 
   function reposition() {
     if (!adWindow || adWindow.isDestroyed() || !adWindow.isVisible() || !lastPayload) return;
-    const bounds = computeBounds(lastPayload.maxWidthPx);
-    if (bounds) adWindow.setBounds(bounds);
+    applyBounds(adWindow, lastPayload);
   }
 
   /** 종료·일시중지. 표시 중이던 구간을 스풀에 남기고 락을 반환한 뒤 창을 정리한다. */
