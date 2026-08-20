@@ -3,36 +3,42 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>클로애드 소재 미리보기</title>
+    <title>클로애드 광고 표시 미리보기</title>
     <link rel="stylesheet" href="preview.css">
   </head>
   <body>
     <div class="xp-window">
       <header class="xp-titlebar">
-        <span class="xp-mark" aria-hidden="true">✦</span>
-        <h1>클로애드 소재 미리보기</h1>
-        <div class="xp-controls" aria-hidden="true">
-          <span>−</span><span>□</span><span>×</span>
+        <img class="xp-titleicon" src="../assets/icon.png" alt="">
+        <h1>클로애드 광고 표시 미리보기</h1>
+        <div class="xp-buttons" aria-hidden="true">
+          <span class="xp-btn">─</span><span class="xp-btn">□</span><span class="xp-btn xp-close">✕</span>
         </div>
       </header>
-      <nav class="xp-menu" aria-label="창 메뉴"><span>파일</span><span>도움말</span></nav>
+      <nav class="xp-menubar" aria-label="창 메뉴"><span>파일</span><span>도움말</span></nav>
 
       <main class="page-content">
         <section class="entry-panel" aria-labelledby="entryTitle">
           <p class="eyebrow">Creative preview</p>
-          <h2 id="entryTitle">소재를 입력해 보세요</h2>
+          <h2 id="entryTitle">나만의 광고를 만들어보세요.</h2>
           <p class="helper-copy">입력 내용은 이 브라우저 화면에서만 미리보기로 표시됩니다.</p>
 
           <div class="field-group">
             <label for="creativeText">광고 문구</label>
-            <textarea id="creativeText" maxlength="120" aria-describedby="textCount validationMessage" placeholder="개발자를 위한 메시지를 입력하세요."></textarea>
-            <span id="textCount" class="count-copy" aria-live="polite">0 / 120</span>
+            <textarea id="creativeText" maxlength="48" aria-describedby="textCount validationMessage" placeholder="광고 문구를 입력해주세요."></textarea>
+            <span id="textCount" class="count-copy" aria-live="polite">0 / 48</span>
           </div>
 
           <div class="field-group">
             <label for="creativeBrand">광고주명</label>
-            <input id="creativeBrand" maxlength="60" aria-describedby="brandCount" placeholder="광고주명">
-            <span id="brandCount" class="count-copy" aria-live="polite">0 / 60</span>
+            <input id="creativeBrand" maxlength="23" aria-describedby="brandCount" placeholder="광고주명">
+            <span id="brandCount" class="count-copy" aria-live="polite">0 / 23</span>
+          </div>
+
+          <div class="field-group">
+            <label for="creativeUrl">연결 링크 <span class="optional-copy">(선택)</span></label>
+            <input id="creativeUrl" type="text" inputmode="url" aria-describedby="urlMessage" placeholder="naver.com 또는 https://example.com">
+            <span id="urlMessage" class="validation-copy" aria-live="polite"></span>
           </div>
           <p id="validationMessage" class="validation-copy" aria-live="polite"></p>
         </section>
@@ -51,9 +57,10 @@
             <p id="mascotMessage" class="mascot-message" aria-live="polite"></p>
             <div id="creativeStrip" class="creative-strip" aria-label="광고판 미리보기">
               <span class="creative-label">[광고]</span>
-              <span id="creativeCopy" class="creative-copy"></span>
+              <a id="creativeCopy" class="creative-copy" target="_blank" rel="noopener noreferrer"></a>
               <div id="creativeMeta" class="creative-meta">
                 <span id="creativeBrandOutput" class="creative-brand-output"></span>
+                <span id="creativeSeparator" class="creative-separator" aria-hidden="true"></span>
                 <span class="creative-reward"><span class="creative-reward-value">예상 적립 985.3P</span></span>
                 <span aria-hidden="true">↗</span>
               </div>
@@ -70,7 +77,11 @@
         </section>
       </main>
     </div>
-    <footer class="xp-taskbar"><span class="start-button">시작</span><span class="task-button">클로애드 소재 미리보기</span></footer>
+    <footer class="taskbar" aria-hidden="true">
+      <span class="start"><img class="start-icon" src="../assets/icon.png" alt="">시작</span>
+      <span class="task-item">클로애드 광고 표시 미리보기</span>
+      <span class="tray">오프라인 미리보기</span>
+    </footer>
     <script src="preview-model.js"></script>
     <script src="preview.js"></script>
   </body>

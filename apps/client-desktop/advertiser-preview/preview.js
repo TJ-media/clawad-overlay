@@ -15,8 +15,9 @@
   }
 })(typeof globalThis === "object" ? globalThis : this, () => {
   const REQUIRED_IDS = [
-    "creativeText", "creativeBrand", "creativeCopy", "creativeBrandOutput",
-    "creativeStrip", "creativeMeta", "textCount", "brandCount", "validationMessage",
+    "creativeText", "creativeBrand", "creativeUrl", "creativeCopy", "creativeBrandOutput",
+    "creativeSeparator", "creativeStrip", "creativeMeta", "textCount", "brandCount",
+    "validationMessage", "urlMessage",
     "mascotObject", "mascotChoices", "mascotMessage",
   ];
 
@@ -85,9 +86,22 @@
       });
       if (nodes.creativeCopy) nodes.creativeCopy.textContent = state.text;
       if (nodes.creativeBrandOutput) nodes.creativeBrandOutput.textContent = state.brand;
-      if (nodes.textCount) nodes.textCount.textContent = `${state.textLength} / 120`;
-      if (nodes.brandCount) nodes.brandCount.textContent = `${state.brandLength} / 60`;
+      if (nodes.creativeSeparator) nodes.creativeSeparator.textContent = state.brand ? "·" : "";
+      if (nodes.textCount) nodes.textCount.textContent = `${state.textLength} / ${model.PREVIEW_TEXT_MAX_LENGTH}`;
+      if (nodes.brandCount) nodes.brandCount.textContent = `${state.brandLength} / ${model.PREVIEW_BRAND_MAX_LENGTH}`;
       if (nodes.validationMessage) nodes.validationMessage.textContent = state.textEmpty ? "광고 문구를 입력해 주세요." : "";
+      const link = model && typeof model.normalizePreviewLink === "function"
+        ? model.normalizePreviewLink(nodes.creativeUrl ? nodes.creativeUrl.value : "")
+        : { href: "", invalid: false };
+      if (nodes.creativeCopy && typeof nodes.creativeCopy.setAttribute === "function") {
+        if (link.href) nodes.creativeCopy.setAttribute("href", link.href);
+        else if (typeof nodes.creativeCopy.removeAttribute === "function") nodes.creativeCopy.removeAttribute("href");
+      }
+      if (nodes.urlMessage) {
+        nodes.urlMessage.textContent = link.invalid
+          ? "올바른 웹 주소를 입력해 주세요. HTTPS 주소만 사용할 수 있습니다."
+          : "";
+      }
       syncCreativeLayout();
       return state;
     }
@@ -132,6 +146,7 @@
       const view = documentRef && documentRef.defaultView;
       if (nodes.creativeText && typeof nodes.creativeText.addEventListener === "function") nodes.creativeText.addEventListener("input", render);
       if (nodes.creativeBrand && typeof nodes.creativeBrand.addEventListener === "function") nodes.creativeBrand.addEventListener("input", render);
+      if (nodes.creativeUrl && typeof nodes.creativeUrl.addEventListener === "function") nodes.creativeUrl.addEventListener("input", render);
       if (view && typeof view.addEventListener === "function") view.addEventListener("resize", scheduleCreativeLayout);
       if (nodes.mascotObject && typeof nodes.mascotObject.addEventListener === "function") {
         nodes.mascotObject.addEventListener("error", () => {

@@ -6,6 +6,8 @@
   if (root) root.ClawAdPreviewModel = api;
 })(typeof globalThis === "object" ? globalThis : this, () => {
   const DEFAULT_MASCOT_ID = "building";
+  const PREVIEW_TEXT_MAX_LENGTH = 48;
+  const PREVIEW_BRAND_MAX_LENGTH = 23;
   const MIN_CREATIVE_WIDTH = 240;
   const MAX_CREATIVE_WIDTH = 420;
   const MASCOTS = Object.freeze([
@@ -26,14 +28,10 @@
     { id: "drag", nameKo: "매달리기", categoryKo: "반응", file: "clawad-react-drag.svg", compact: false },
     { id: "poke", nameKo: "화들짝", categoryKo: "반응", file: "clawad-react-poke.svg", compact: false },
     { id: "double", nameKo: "하트", categoryKo: "반응", file: "clawad-react-double.svg", compact: false },
-    { id: "mini-idle", nameKo: "미니 대기", categoryKo: "미니", file: "clawad-mini-idle.svg", compact: true },
     { id: "mini-enter", nameKo: "미니 입장", categoryKo: "미니", file: "clawad-mini-enter.svg", compact: true },
     { id: "mini-enter-sleep", nameKo: "미니 취침 입장", categoryKo: "미니", file: "clawad-mini-enter-sleep.svg", compact: true },
     { id: "mini-crabwalk", nameKo: "옆걸음", categoryKo: "미니", file: "clawad-mini-crabwalk.svg", compact: true },
     { id: "mini-peek", nameKo: "빼꼼", categoryKo: "미니", file: "clawad-mini-peek.svg", compact: true },
-    { id: "mini-alert", nameKo: "미니 알림", categoryKo: "미니", file: "clawad-mini-alert.svg", compact: true },
-    { id: "mini-happy", nameKo: "미니 기쁨", categoryKo: "미니", file: "clawad-mini-happy.svg", compact: true },
-    { id: "mini-sleep", nameKo: "미니 수면", categoryKo: "미니", file: "clawad-mini-sleep.svg", compact: true },
   ].map((mascot) => Object.freeze(mascot)));
 
   function sanitizeField(value, maxLength) {
@@ -46,8 +44,8 @@
   }
 
   function buildPreviewState(input = {}) {
-    const text = sanitizeField(input.text, 120);
-    const brand = sanitizeField(input.brand, 60);
+    const text = sanitizeField(input.text, PREVIEW_TEXT_MAX_LENGTH);
+    const brand = sanitizeField(input.brand, PREVIEW_BRAND_MAX_LENGTH);
     return {
       text,
       brand,
@@ -55,6 +53,29 @@
       brandLength: [...brand].length,
       textEmpty: text.length === 0,
     };
+  }
+
+  function normalizePreviewLink(value) {
+    const raw = typeof value === "string" ? value.trim() : "";
+    if (!raw) return { href: "", invalid: false };
+    if (/\s/.test(raw)) return { href: "", invalid: true };
+
+    const hasScheme = /^[a-z][a-z0-9+.-]*:/i.test(raw);
+    if (hasScheme && !/^https:\/\//i.test(raw)) return { href: "", invalid: true };
+
+    try {
+      const parsed = new URL(hasScheme ? raw : `https://${raw}`);
+      const labels = parsed.hostname.split(".");
+      const validHostname = labels.length >= 2 && labels.every((label) => (
+        /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i.test(label)
+      ));
+      if (parsed.protocol !== "https:" || parsed.username || parsed.password || !validHostname) {
+        return { href: "", invalid: true };
+      }
+      return { href: parsed.href, invalid: false };
+    } catch {
+      return { href: "", invalid: true };
+    }
   }
 
   function findMascot(id) {
@@ -70,6 +91,9 @@
   return {
     sanitizeField,
     buildPreviewState,
+    normalizePreviewLink,
+    PREVIEW_TEXT_MAX_LENGTH,
+    PREVIEW_BRAND_MAX_LENGTH,
     clampCreativeWidth,
     DEFAULT_MASCOT_ID,
     MASCOTS,
