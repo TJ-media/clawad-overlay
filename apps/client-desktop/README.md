@@ -65,7 +65,7 @@ Claw-Ad 로컬 데이터가 기본 경로가 아니라면 `CLAWAD_DATA`로 디�
 
 ## 광고주 소재 미리보기
 
-`advertiser-preview/index.html`을 브라우저에서 직접 열면 광고 문구와 마스코트 조합을 확인할 수 있습니다. 입력 내용은 저장하거나 네트워크로 전송하지 않으며, 화면의 적립 수치는 계산·지급 값이 아닌 레이아웃 예시입니다.
+미리보기는 [clawad.whatsup.house/creative](https://clawad.whatsup.house/creative/)로 옮겼습니다 (CLAW-248). 광고 문구와 마스코트 조합을 확인하고 그 자리에서 광고를 신청할 수 있습니다. 화면의 적립 수치는 계산·지급 값이 아닌 레이아웃 예시입니다.
 
 ## 테스트
 
