@@ -6,6 +6,11 @@ const path = require("node:path");
 
 const REPO_ROOT = path.resolve(__dirname, "..");
 const TEMPLATE_DIR = path.join(REPO_ROOT, "themes", "template");
+// userData 디렉터리 이름은 Electron app.getName()과 같은 규칙으로 정해진다 — productName이
+// 우선이고 없으면 name (CLAW-155). 여기에 이름을 따로 적어두면 productName이 바뀐 뒤에도
+// 스캐폴딩이 앱은 보지 않는 폴더를 만든다.
+const APP_MANIFEST = require(path.join(REPO_ROOT, "package.json"));
+const APP_DIR_NAME = APP_MANIFEST.productName || APP_MANIFEST.name;
 
 function slugifyThemeId(input) {
   return String(input || "")
@@ -36,13 +41,13 @@ function getDefaultThemesRoot(platform = process.platform, env = process.env, ho
   const pathApi = platform === "win32" ? path.win32 : path.posix;
   if (platform === "win32") {
     const appData = env.APPDATA || pathApi.join(homeDir, "AppData", "Roaming");
-    return pathApi.join(appData, "clawd-on-desk", "themes");
+    return pathApi.join(appData, APP_DIR_NAME, "themes");
   }
   if (platform === "darwin") {
-    return pathApi.join(homeDir, "Library", "Application Support", "clawd-on-desk", "themes");
+    return pathApi.join(homeDir, "Library", "Application Support", APP_DIR_NAME, "themes");
   }
   const configHome = env.XDG_CONFIG_HOME || pathApi.join(homeDir, ".config");
-  return pathApi.join(configHome, "clawd-on-desk", "themes");
+  return pathApi.join(configHome, APP_DIR_NAME, "themes");
 }
 
 function parseArgs(argv) {
