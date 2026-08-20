@@ -7,6 +7,7 @@ on:
       - ".github/pages/index.html"
       - ".github/workflows/advertiser-preview-pages.yml"
       - "apps/client-desktop/advertiser-preview/**"
+      - "apps/client-desktop/assets/icon.png"
       - "apps/client-desktop/themes/clawad/LICENSE"
       - "apps/client-desktop/themes/clawad/assets/**"
   workflow_dispatch:
@@ -33,8 +34,9 @@ jobs:
 
       - name: Prepare static artifact
         run: |
-          mkdir -p _site/advertiser-preview _site/themes/clawad
+          mkdir -p _site/advertiser-preview _site/themes/clawad _site/assets
           cp .github/pages/index.html _site/index.html
+          cp apps/client-desktop/assets/icon.png _site/assets/icon.png
           cp -R apps/client-desktop/advertiser-preview/. _site/advertiser-preview/
           cp -R apps/client-desktop/themes/clawad/assets _site/themes/clawad/assets
           cp apps/client-desktop/themes/clawad/LICENSE _site/themes/clawad/LICENSE
