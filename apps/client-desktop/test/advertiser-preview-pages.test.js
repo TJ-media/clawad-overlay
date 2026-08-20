@@ -17,6 +17,7 @@ test("광고주 미리보기 Pages 워크플로는 main의 정적 파일만 배�
   const workflow = readText(WORKFLOW_PATH);
 
   assert.match(workflow, /branches:\s*\[main\]/);
+  assert.match(workflow, /apps\/client-desktop\/assets\/icon\.png/);
   assert.match(workflow, /pages:\s*write/);
   assert.match(workflow, /id-token:\s*write/);
   assert.match(workflow, /actions\/checkout@v6/);
@@ -32,6 +33,7 @@ test("광고주 미리보기 Pages 워크플로는 main의 정적 파일만 배�
     workflow.split("\n").map((line) => line.trim()).filter((line) => line.startsWith("cp ")),
     [
       "cp .github/pages/index.html _site/index.html",
+      "cp apps/client-desktop/assets/icon.png _site/assets/icon.png",
       "cp -R apps/client-desktop/advertiser-preview/. _site/advertiser-preview/",
       "cp -R apps/client-desktop/themes/clawad/assets _site/themes/clawad/assets",
       "cp apps/client-desktop/themes/clawad/LICENSE _site/themes/clawad/LICENSE",

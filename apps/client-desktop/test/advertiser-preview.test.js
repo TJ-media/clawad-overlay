@@ -57,8 +57,9 @@ function createFakePreviewDocument() {
   const viewListeners = new Map();
   let animationFrame = null;
   const ids = [
-    "creativeText", "creativeBrand", "creativeCopy", "creativeBrandOutput",
-    "creativeStrip", "creativeMeta", "textCount", "brandCount", "validationMessage",
+    "creativeText", "creativeBrand", "creativeUrl", "creativeCopy", "creativeBrandOutput",
+    "creativeSeparator", "creativeStrip", "creativeMeta", "textCount", "brandCount",
+    "validationMessage", "urlMessage",
     "mascotObject", "mascotChoices", "mascotMessage",
   ];
   const makeNode = (id) => {
@@ -87,6 +88,9 @@ function createFakePreviewDocument() {
       },
       setAttribute(name, value) {
         this.attributes[name] = String(value);
+      },
+      removeAttribute(name) {
+        delete this.attributes[name];
       },
       addEventListener(type, listener) {
         listeners.set(type, listener);
@@ -139,7 +143,40 @@ test("입력 이벤트마다 정화된 문구와 광고주명이 출력된다", 
   fake.nodes.creativeText.dispatch("input");
   assert.equal(fake.nodes.creativeCopy.textContent, "첫줄 둘째줄");
   assert.equal(fake.nodes.creativeBrandOutput.textContent, "테스트 광고주");
-  assert.equal(fake.nodes.textCount.textContent, "6 / 120");
+  assert.equal(fake.nodes.textCount.textContent, "6 / 48");
+  assert.equal(fake.nodes.brandCount.textContent, "7 / 23");
+});
+
+test("유효한 도메인은 광고 문구 링크가 되고 잘못된 주소는 클릭과 밑줄을 해제한다", () => {
+  const fake = createFakePreviewDocument();
+  const controller = createPreviewController(fake.document, model);
+  controller.start();
+  fake.nodes.creativeText.value = "클로애드 자세히 보기";
+  fake.nodes.creativeUrl.value = "whatsup.house/about";
+  fake.nodes.creativeUrl.dispatch("input");
+
+  assert.equal(fake.nodes.creativeCopy.attributes.href, "https://whatsup.house/about");
+  assert.equal(fake.nodes.urlMessage.textContent, "");
+
+  fake.nodes.creativeUrl.value = "http://naver.com";
+  fake.nodes.creativeUrl.dispatch("input");
+  assert.equal(fake.nodes.creativeCopy.attributes.href, undefined);
+  assert.equal(fake.nodes.urlMessage.textContent, "올바른 웹 주소를 입력해 주세요. HTTPS 주소만 사용할 수 있습니다.");
+});
+
+test("광고주명이 있을 때만 적립 포인트 앞에 가운데점을 표시한다", () => {
+  const fake = createFakePreviewDocument();
+  const controller = createPreviewController(fake.document, model);
+  controller.start();
+  assert.equal(fake.nodes.creativeSeparator.textContent, "");
+
+  fake.nodes.creativeBrand.value = "클로애드";
+  fake.nodes.creativeBrand.dispatch("input");
+  assert.equal(fake.nodes.creativeSeparator.textContent, "·");
+
+  fake.nodes.creativeBrand.value = "";
+  fake.nodes.creativeBrand.dispatch("input");
+  assert.equal(fake.nodes.creativeSeparator.textContent, "");
 });
 
 test("입력 문구의 자연 폭을 실제 광고판 범위로 제한해 즉시 반영한다", () => {
@@ -176,6 +213,19 @@ test("마스코트 선택은 object 채널의 에셋 경로와 한국어 이름�
   assert.equal(selected.attributes["aria-pressed"], "true");
 });
 
+test("마스코트 선택 목록은 겹치는 미니 대기·알림·기쁨·수면을 노출하지 않는다", () => {
+  const fake = createFakePreviewDocument();
+  const controller = createPreviewController(fake.document, model);
+  controller.start();
+  const names = fake.nodes.mascotChoices.children.map((button) => button.textContent);
+
+  for (const excluded of ["미니 대기", "미니 알림", "미니 기쁨", "미니 수면"]) {
+    assert.equal(names.includes(excluded), false, excluded);
+  }
+  assert.equal(names.includes("미니 입장"), true);
+  assert.equal(names.includes("빼꼼"), true);
+});
+
 test("마스코트 object 로드 오류는 한국어 안내를 표시한다", () => {
   const fake = createFakePreviewDocument();
   const controller = createPreviewController(fake.document, model);
@@ -190,15 +240,15 @@ test("마스코트 object 로드 오류는 한국어 안내를 표시한다", ()
   assert.equal(fake.nodes.mascotMessage.textContent, "");
 });
 
-test("광고 문구는 제어문자와 연속 공백을 정리하고 120자로 제한한다", () => {
+test("미리보기 입력은 제어문자와 연속 공백을 정리하고 문구 48자·광고주명 23자로 제한한다", () => {
   const raw = `  첫줄\n\u001b[31m둘째줄  ${"가".repeat(140)}`;
-  const state = model.buildPreviewState({ text: raw, brand: " 브랜드\t이름 " });
+  const state = model.buildPreviewState({ text: raw, brand: ` 브랜드\t이름${"나".repeat(30)} ` });
   assert.equal(state.text.includes("\n"), false);
   assert.equal(state.text.includes("\u001b"), false);
-  assert.equal([...state.text].length, 120);
-  assert.equal(state.brand, "브랜드 이름");
-  assert.equal(state.textLength, 120);
-  assert.equal(state.brandLength, 6);
+  assert.equal([...state.text].length, 48);
+  assert.equal([...state.brand].length, 23);
+  assert.equal(state.textLength, 48);
+  assert.equal(state.brandLength, 23);
   assert.equal(state.textEmpty, false);
 });
 
@@ -213,9 +263,37 @@ test("입력 모델은 문자열이 아닌 값과 빈 문구를 안전하게 처
   });
 });
 
-test("마스코트 manifest는 테마의 모든 고유 에셋을 한국어 항목으로 제공한다", () => {
+test("스킴 없는 일반 도메인과 생소한 최상위 도메인을 HTTPS 링크로 정규화한다", () => {
+  assert.deepEqual(model.normalizePreviewLink("naver.com"), {
+    href: "https://naver.com/",
+    invalid: false,
+  });
+  assert.deepEqual(model.normalizePreviewLink("  whatsup.house/path?q=1  "), {
+    href: "https://whatsup.house/path?q=1",
+    invalid: false,
+  });
+  assert.deepEqual(model.normalizePreviewLink("https://example.com/landing"), {
+    href: "https://example.com/landing",
+    invalid: false,
+  });
+});
+
+test("빈 링크는 선택 입력으로 두고 URL이 아닌 값과 HTTP 링크는 거절한다", () => {
+  assert.deepEqual(model.normalizePreviewLink(""), { href: "", invalid: false });
+  for (const value of ["hello", "naver..com", "naver .com", "http://naver.com", "https://-bad.com"]) {
+    assert.deepEqual(model.normalizePreviewLink(value), { href: "", invalid: true }, value);
+  }
+});
+
+test("마스코트 목록은 manifest 에셋 중 겹치는 미니 4종만 제외하고 한국어 이름을 제공한다", () => {
   const theme = parseThemeJson(readTextFile(THEME_PATH));
   const files = new Set();
+  const excludedFiles = new Set([
+    "clawad-mini-idle.svg",
+    "clawad-mini-alert.svg",
+    "clawad-mini-happy.svg",
+    "clawad-mini-sleep.svg",
+  ]);
   for (const values of Object.values(theme.states)) {
     for (const file of values) files.add(file);
   }
@@ -228,8 +306,9 @@ test("마스코트 manifest는 테마의 모든 고유 에셋을 한국어 항�
     for (const file of values) files.add(file);
   }
 
-  assert.equal(model.MASCOTS.length, 25);
-  assert.deepEqual(model.MASCOTS.map(({ file }) => file).sort(), [...files].sort());
+  const expectedFiles = [...files].filter((file) => !excludedFiles.has(file)).sort();
+  assert.equal(model.MASCOTS.length, 21);
+  assert.deepEqual(model.MASCOTS.map(({ file }) => file).sort(), expectedFiles);
   for (const mascot of model.MASCOTS) {
     assert.match(mascot.nameKo, /[가-힣]/);
     assert.match(mascot.categoryKo, /[가-힣]/);
@@ -275,14 +354,15 @@ test("독립 미리보기 페이지는 입력 접근성, 고정 표기, 로컬 �
   const findById = (id) => elements.find((element) => attribute(element, "id") === id);
   const labels = findElements(document, (element) => element.name === "label");
 
-  for (const [id, maxLength] of [["creativeText", "120"], ["creativeBrand", "60"]]) {
+  for (const [id, maxLength] of [["creativeText", "48"], ["creativeBrand", "23"]]) {
     assert.ok(findById(id), `${id} 입력이 있어야 합니다.`);
     assert.equal(attribute(findById(id), "maxlength"), maxLength);
     assert.ok(labels.some((label) => attribute(label, "for") === id), `${id}에 연결된 label이 있어야 합니다.`);
   }
 
   for (const id of [
-    "creativeCopy", "creativeBrandOutput", "textCount", "brandCount", "validationMessage",
+    "creativeUrl", "creativeCopy", "creativeBrandOutput", "creativeSeparator", "textCount",
+    "brandCount", "validationMessage", "urlMessage",
     "creativeStrip", "creativeMeta", "mascotObject", "mascotChoices", "mascotMessage",
   ]) assert.ok(findById(id), `${id} 출력 요소가 있어야 합니다.`);
 
@@ -303,6 +383,38 @@ test("독립 미리보기 페이지는 입력 접근성, 고정 표기, 로컬 �
   const scripts = findElements(document, (element) => element.name === "script");
   assert.deepEqual(scripts.map((script) => attribute(script, "src")), ["preview-model.js", "preview.js"]);
   assert.ok(scripts.every((script) => nodeText(script).trim() === ""), "입력값을 HTML 문자열로 삽입하는 인라인 템플릿을 두지 않습니다.");
+});
+
+test("페이지 문구·링크 입력·창 크롬은 클로애드 홈페이지 계약을 따른다", () => {
+  const html = readTextFile(path.join(PREVIEW_DIR, "index.html"));
+  const document = parseDocument(html);
+  const elements = findElements(document, () => true);
+  const findById = (id) => elements.find((element) => attribute(element, "id") === id);
+  const hasClass = (element, className) => (attribute(element, "class") || "").split(/\s+/).includes(className);
+
+  assert.equal(nodeText(elements.find((element) => element.name === "title")), "클로애드 광고 표시 미리보기");
+  assert.ok(elements.some((element) => element.name === "h1" && nodeText(element) === "클로애드 광고 표시 미리보기"));
+  assert.ok(elements.some((element) => element.name === "h2" && nodeText(element) === "나만의 광고를 만들어보세요."));
+  assert.equal(attribute(findById("creativeText"), "placeholder"), "광고 문구를 입력해주세요.");
+
+  const urlInput = findById("creativeUrl");
+  assert.equal(urlInput.name, "input");
+  assert.equal(attribute(urlInput, "inputmode"), "url");
+  assert.ok(elements.some((element) => element.name === "label" && attribute(element, "for") === "creativeUrl"));
+
+  const creativeLink = findById("creativeCopy");
+  assert.equal(creativeLink.name, "a");
+  assert.equal(attribute(creativeLink, "target"), "_blank");
+  assert.deepEqual((attribute(creativeLink, "rel") || "").split(/\s+/).sort(), ["noopener", "noreferrer"]);
+
+  const titleIcon = elements.find((element) => element.name === "img" && hasClass(element, "xp-titleicon"));
+  const startIcon = elements.find((element) => element.name === "img" && hasClass(element, "start-icon"));
+  assert.equal(attribute(titleIcon, "src"), "../assets/icon.png");
+  assert.equal(attribute(startIcon, "src"), "../assets/icon.png");
+  assert.ok(elements.some((element) => hasClass(element, "xp-close") && nodeText(element) === "✕"));
+  for (const className of ["start", "task-item", "tray"]) {
+    assert.ok(elements.some((element) => hasClass(element, className)), `${className} 작업표시줄 요소가 있어야 합니다.`);
+  }
 });
 
 test("미리보기 광고판은 운영 오버레이의 두 줄 Grid와 잘림 우선순위를 유지한다", () => {
@@ -411,9 +523,20 @@ test("페이지는 클로애드 홈페이지의 XP 디자인 시스템을 따른
   const previewCss = readTextFile(path.join(PREVIEW_DIR, "preview.css"));
   assert.match(declaration(previewCss, "body", "background"), /^radial-gradient\(/);
   assert.equal(declaration(previewCss, "body", "font-size"), "12px");
-  assert.equal(declaration(previewCss, ".xp-window", "width"), "min(920px, 100%)");
+  assert.equal(declaration(previewCss, ".xp-window", "width"), "min(1080px, 100%)");
   assert.equal(declaration(previewCss, ".xp-window", "background"), "#ece9d8");
   assert.equal(declaration(previewCss, ".xp-window", "border"), "3px solid #0831d9");
+  assert.equal(declaration(previewCss, ".xp-titleicon", "width"), "18px");
+  assert.equal(declaration(previewCss, ".xp-titleicon", "height"), "18px");
+  assert.equal(declaration(previewCss, ".xp-btn", "width"), "21px");
+  assert.match(declaration(previewCss, ".xp-close", "background"), /^linear-gradient\(/);
+  assert.equal(declaration(previewCss, ".page-content", "grid-template-columns"), "minmax(420px, .9fr) minmax(500px, 1.1fr)");
+  assert.equal(declaration(previewCss, ".helper-copy", "white-space"), "nowrap");
+  assert.equal(declaration(previewCss, ".taskbar", "height"), "34px");
+  assert.match(declaration(previewCss, ".taskbar", "background"), /^linear-gradient\(/);
+  assert.equal(declaration(previewCss, ".taskbar .start", "display"), "flex");
+  assert.equal(declaration(previewCss, ".start-icon", "width"), "20px");
+  assert.equal(declaration(previewCss, ".taskbar .tray", "margin-left"), "auto");
   assert.equal(declaration(previewCss, ":root", "--strip"), "rgba(255, 255, 255, 0.88)");
   assert.equal(declaration(previewCss, ":root", "--strip-ink"), "#242427");
   assert.doesNotMatch(previewCss, /prefers-color-scheme:\s*dark/);
@@ -424,7 +547,24 @@ test("미리보기 무대는 홈페이지와 같은 하늘색 단색 배경이�
   assert.equal(declaration(previewCss, ".preview-stage", "background"), "#d7edff");
 });
 
-test("밝은 광고판의 문구 밑줄은 패널 위에서 대비되는 색을 쓴다", () => {
+test("좁은 화면의 단일 Grid 열은 광고판 최소 콘텐츠 폭보다 작게 줄어든다", () => {
   const previewCss = readTextFile(path.join(PREVIEW_DIR, "preview.css"));
-  assert.equal(declaration(previewCss, ".creative-copy", "text-decoration-color"), "var(--strip-muted)");
+  assert.ok(
+    declarationBlocks(previewCss, ".page-content").some((block) => (
+      /grid-template-columns\s*:\s*minmax\(0,\s*1fr\)/.test(block)
+    )),
+    "모바일 단일 열은 min-content가 아니라 0까지 줄어들 수 있어야 합니다.",
+  );
+  assert.equal(
+    declaration(previewCss, ".preview-stage", "grid-template-columns"),
+    "minmax(0, 1fr)",
+    "320px 화면에서도 광고판이 미리보기 무대의 가용 폭을 넘기면 안 됩니다.",
+  );
+});
+
+test("광고 문구 밑줄은 유효한 링크가 있을 때만 표시한다", () => {
+  const previewCss = readTextFile(path.join(PREVIEW_DIR, "preview.css"));
+  assert.equal(declaration(previewCss, ".creative-copy", "text-decoration"), "none");
+  assert.equal(declaration(previewCss, ".creative-copy[href]", "text-decoration"), "underline");
+  assert.equal(declaration(previewCss, ".creative-copy[href]", "text-decoration-color"), "var(--strip-muted)");
 });
