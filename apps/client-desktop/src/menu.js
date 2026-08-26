@@ -349,7 +349,7 @@ module.exports = function initMenu(ctx) {
     }
     if (typeof ctx.openClawadRewardShop === "function" && ctx.clawadRewardShopUrl) {
       appGroup.push({
-        label: t("openRewardShop"),
+        label: t("openHomepage"),
         click: () => ctx.openClawadRewardShop(),
       });
     }
@@ -581,7 +581,7 @@ module.exports = function initMenu(ctx) {
     }
     if (typeof ctx.openClawadRewardShop === "function" && ctx.clawadRewardShopUrl) {
       appGroup.push({
-        label: t("openRewardShop"),
+        label: t("openHomepage"),
         click: () => ctx.openClawadRewardShop(),
       });
     }
