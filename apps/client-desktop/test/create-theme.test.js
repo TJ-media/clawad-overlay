@@ -26,15 +26,15 @@ describe("create-theme defaults", () => {
   it("resolves the platform-specific user themes directory", () => {
     assert.strictEqual(
       createTheme.getDefaultThemesRoot("win32", { APPDATA: "C:\\Users\\Ruller\\AppData\\Roaming" }, "C:\\Users\\Ruller"),
-      path.win32.join("C:\\Users\\Ruller\\AppData\\Roaming", "clawd-on-desk", "themes")
+      path.win32.join("C:\\Users\\Ruller\\AppData\\Roaming", "Claw-Ad", "themes")
     );
     assert.strictEqual(
       createTheme.getDefaultThemesRoot("darwin", {}, "/Users/ruller"),
-      "/Users/ruller/Library/Application Support/clawd-on-desk/themes"
+      "/Users/ruller/Library/Application Support/Claw-Ad/themes"
     );
     assert.strictEqual(
       createTheme.getDefaultThemesRoot("linux", { XDG_CONFIG_HOME: "/tmp/config-home" }, "/home/ruller"),
-      "/tmp/config-home/clawd-on-desk/themes"
+      "/tmp/config-home/Claw-Ad/themes"
     );
   });
 
@@ -56,7 +56,7 @@ describe("create-theme scaffold", () => {
 
     assert.strictEqual(result.themeId, "pixel-cat");
     assert.ok(fs.existsSync(path.join(result.targetDir, "theme.json")));
-    assert.ok(fs.existsSync(path.join(result.targetDir, "assets", "idle-follow.svg")));
+    // 이 포크의 템플릿은 theme.json만 담는다 — 아트워크는 반입에서 전량 제외했다 (CLAW-89).
 
     const themeJson = fs.readFileSync(path.join(result.targetDir, "theme.json"), "utf8");
     assert.match(themeJson, /"name": "Pixel Cat"/);

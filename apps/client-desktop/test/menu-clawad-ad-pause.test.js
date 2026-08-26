@@ -291,8 +291,8 @@ describe("일시중지·안내 끄기 쓰기 경로 (CLAW-170)", () => {
   });
 });
 
-describe("리워드샵 메뉴 항목 (CLAW-166)", () => {
-  it("트레이와 컨텍스트 메뉴에서 안내 설정 다음에 리워드샵을 연다", () => {
+describe("홈페이지 메뉴 항목 (CLAW-166)", () => {
+  it("트레이와 컨텍스트 메뉴에서 안내 설정 다음에 홈페이지를 연다", () => {
     const initMenu = loadMenuWithElectron(fakeElectron());
     let opens = 0;
     const ctx = buildBaseCtx({
@@ -305,17 +305,17 @@ describe("리워드샵 메뉴 항목 (CLAW-166)", () => {
 
     const tray = trayLabels(ctx, initMenu);
     const noticeIndex = tray.labels.indexOf("Hide Notices");
-    assert.strictEqual(tray.labels[noticeIndex + 1], "Open Reward Shop");
+    assert.strictEqual(tray.labels[noticeIndex + 1], "Open Homepage");
     tray.template[noticeIndex + 1].click();
     assert.strictEqual(opens, 1);
 
     initMenu(ctx).buildContextMenu();
     const contextLabels = ctx.contextMenu.template.map((item) => item.label);
     const contextNoticeIndex = contextLabels.indexOf("Hide Notices");
-    assert.strictEqual(contextLabels[contextNoticeIndex + 1], "Open Reward Shop");
+    assert.strictEqual(contextLabels[contextNoticeIndex + 1], "Open Homepage");
   });
 
-  it("정책에 유효한 URL이 없으면 리워드샵 메뉴만 숨긴다", () => {
+  it("정책에 유효한 URL이 없으면 홈페이지 메뉴만 숨긴다", () => {
     const initMenu = loadMenuWithElectron(fakeElectron());
     const ctx = buildBaseCtx({
       clawadRewardShopUrl: null,
@@ -323,19 +323,19 @@ describe("리워드샵 메뉴 항목 (CLAW-166)", () => {
     });
 
     const { labels } = trayLabels(ctx, initMenu);
-    assert.ok(!labels.includes("Open Reward Shop"));
+    assert.ok(!labels.includes("Open Homepage"));
     initMenu(ctx).buildContextMenu();
-    assert.ok(!ctx.contextMenu.template.some((item) => item.label === "Open Reward Shop"));
+    assert.ok(!ctx.contextMenu.template.some((item) => item.label === "Open Homepage"));
   });
 });
 
-describe("리워드샵 메뉴 로케일 (CLAW-166)", () => {
-  it("지원 언어 5종 모두 리워드샵 열기 라벨이 있다", () => {
+describe("홈페이지 메뉴 로케일 (CLAW-166)", () => {
+  it("지원 언어 5종 모두 홈페이지 바로가기 라벨이 있다", () => {
     const { i18n, SUPPORTED_LANGS } = require("../src/i18n");
     for (const lang of SUPPORTED_LANGS) {
       const dict = i18n[lang];
-      assert.ok(dict.openRewardShop && dict.openRewardShop !== "openRewardShop", `${lang}: openRewardShop 라벨 필요`);
+      assert.ok(dict.openHomepage && dict.openHomepage !== "openHomepage", `${lang}: openHomepage 라벨 필요`);
     }
-    assert.strictEqual(i18n.ko.openRewardShop, "리워드샵 열기");
+    assert.strictEqual(i18n.ko.openHomepage, "홈페이지 바로가기");
   });
 });
