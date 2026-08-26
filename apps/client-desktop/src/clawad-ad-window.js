@@ -386,7 +386,10 @@ module.exports = function initClawadAdWindow(ctx) {
 
   return {
     canRender: (now) => runtime.canRender(now),
-    canShowNotices: (now) => Boolean(runtime.displayContext(now)),
+    // 로그인 안내는 끌 수 없다. 안내 문구와 달리 사용자가 손쓸 수 있는 유일한 상태를 알리는
+    // 화면이고, choosePayload가 그것을 안내 문구보다 먼저 고른다 — 이 상태에서 "안내 끄기"를
+    // 메뉴에 남기면 눌러도 아무 것도 사라지지 않는 죽은 항목이 된다.
+    canShowNotices: (now) => !readLoginPrompt() && Boolean(runtime.displayContext(now)),
     cleanup,
     getWindow: () => adWindow,
     openCurrentAd,
