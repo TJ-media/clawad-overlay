@@ -165,11 +165,14 @@ test("버전이 다른 파일은 줍지 않는다", () => {
 
 const ASAR_ARM = `app-${VERSION}-arm64.asar`;
 const ASAR_X64 = `app-${VERSION}-x64.asar`;
+const UNPACKED_ARM = `app-${VERSION}-arm64.unpacked.tar.gz`;
+const UNPACKED_X64 = `app-${VERSION}-x64.unpacked.tar.gz`;
 
 test("asar가 있으면 codeUpdate에 아키텍처별로 담는다 (CLAW-161)", () => {
   const dist = withDist({
     [MAC_ARM]: "mac-arm", [MAC_X64]: "mac-x64",
     [ASAR_ARM]: "asar-arm-bytes", [ASAR_X64]: "asar-x64-bytes",
+    [UNPACKED_ARM]: "unpacked-arm", [UNPACKED_X64]: "unpacked-x64",
   });
 
   assert.strictEqual(run(dist).status, 0);
@@ -205,4 +208,45 @@ test("runtimeId는 Electron 버전과 의존성으로만 정해진다 (CLAW-161)
   assert.strictEqual(readManifest(again).runtimeId, first, "산출물 구성이 달라도 runtimeId는 같다");
 
   assert.match(first, /^[a-f0-9]{64}$/);
+});
+
+// ── unpacked 묶음 (CLAW-283) ────────────────────────────────────────────
+// asar만 갈면 asarUnpack 대상(번들 테마 등)은 옛것으로 남는다. 0.2.12가 그렇게 나가
+// 마스코트 흰 테두리 수정이 macOS 경량 경로 사용자에게 닿지 않았다.
+
+test("codeUpdate 항목에 unpacked 묶음을 함께 담는다 (CLAW-283)", () => {
+  const dist = withDist({
+    [MAC_ARM]: "mac-arm", [MAC_X64]: "mac-x64",
+    [ASAR_ARM]: "asar-arm", [ASAR_X64]: "asar-x64",
+    [UNPACKED_ARM]: "unpacked-arm-bytes", [UNPACKED_X64]: "unpacked-x64-bytes",
+  });
+
+  assert.strictEqual(run(dist).status, 0);
+  const arm = readManifest(dist).codeUpdate["darwin-arm64"];
+
+  assert.match(arm.unpacked.url, new RegExp(`/releases/download/v${VERSION}/${UNPACKED_ARM.replace(/\./g, "\.")}$`));
+  assert.strictEqual(arm.unpacked.bytes, Buffer.byteLength("unpacked-arm-bytes"));
+  assert.strictEqual(
+    arm.unpacked.sha256,
+    crypto.createHash("sha256").update("unpacked-arm-bytes").digest("hex")
+  );
+  // asar와 별개 자산이다 — 체크섬을 섞어 쓰면 한쪽만 갈아 끼우는 사고가 난다.
+  assert.notStrictEqual(arm.unpacked.sha256, arm.sha256);
+});
+
+test("asar만 있고 unpacked 묶음이 없으면 실패한다 (CLAW-283)", () => {
+  const dist = withDist({ [MAC_ARM]: "mac-arm", [ASAR_ARM]: "asar-arm" });
+
+  const result = run(dist);
+
+  // 조용히 넘기면 새 CLI가 전체 교체로 되돌아간 것을 아무도 눈치채지 못한다.
+  assert.notStrictEqual(result.status, 0);
+  assert.match(result.stderr, new RegExp(UNPACKED_ARM.replace(/\./g, "\.")));
+});
+
+test("asar가 없으면 unpacked 묶음이 있어도 codeUpdate를 만들지 않는다 (CLAW-283)", () => {
+  const dist = withDist({ [MAC_ARM]: "mac-arm", [UNPACKED_ARM]: "unpacked-arm" });
+
+  assert.strictEqual(run(dist).status, 0);
+  assert.ok(!("codeUpdate" in readManifest(dist)), "asar 없이 묶음만으로는 경량 경로를 만들 수 없다");
 });
