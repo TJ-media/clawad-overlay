@@ -44,11 +44,11 @@ function themeSupportsMini() {
 }
 
 // ── Window animation ──
-// Mini animations run on **real** Electron bounds (not virtual). enterMiniMode
-// calls ctx.setViewportOffsetY(0) before starting animation, so real === virtual
-// throughout the mini lifecycle. Skipping applyPetWindowBounds here avoids the
-// per-frame materialize → IPC → renderer CSS re-apply round-trip that was
-// stalling the main thread during mini entry.
+// Mini animations run on **real** Electron bounds (not virtual). The viewport
+// offset is constant for the whole mini lifecycle (see viewport offset below),
+// so real y never has to be re-derived. Skipping applyPetWindowBounds here
+// avoids the per-frame materialize → IPC → renderer CSS re-apply round-trip
+// that was stalling the main thread during mini entry.
 function animateWindowX(targetX, durationMs, onDone) {
   if (peekAnimTimer) { clearTimeout(peekAnimTimer); peekAnimTimer = null; }
   const bounds = ctx.win.getBounds();
@@ -210,6 +210,33 @@ function syncContainedClip() {
   });
 }
 
+// ── Viewport offset ──
+// A pet pinned to the top sits at real y = workArea.y with the artwork shifted
+// up by viewportOffsetY (its transparent top margin). Zeroing that offset moves
+// the artwork, not the window — so mini entry used to drop the pet by that
+// margin and the wall-mounted pet could never reach the top of the screen.
+// Mini now rides the offset it inherits: it stays constant while mini is on, so
+// real bounds still drive every animation frame with no materialize round-trip.
+function currentViewportOffsetY() {
+  const virtual = ctx.getPetWindowBounds();
+  if (!virtual || !ctx.win || ctx.win.isDestroyed()) return 0;
+  const offset = ctx.win.getBounds().y - virtual.y;
+  return Number.isFinite(offset) && offset > 0 ? offset : 0;
+}
+
+// Drop the offset while lifting the window by the same amount, so the pet does
+// not move on screen. Mini exit needs real === virtual: the exit parabola
+// animates straight to the stored virtual position with setPosition().
+function detachViewportOffset() {
+  const offset = currentViewportOffsetY();
+  if (typeof ctx.setViewportOffsetY === "function") ctx.setViewportOffsetY(0);
+  if (offset <= 0 || !ctx.win || ctx.win.isDestroyed()) return;
+  const real = ctx.win.getBounds();
+  try {
+    ctx.win.setBounds({ ...real, y: real.y - offset });
+  } catch {}
+}
+
 // Shared X-position formula for mini mode (eliminates duplication across 4+ call sites)
 function calcMiniX(wa, size) {
   if (miniEdge === "left") return wa.x - Math.round(size.width * MINI_OFFSET_RATIO);
@@ -305,9 +332,8 @@ function enterMiniMode(wa, viaMenu, edge) {
     preMiniX = virtualBounds.x;
     preMiniY = virtualBounds.y;
   }
-  // 清零 viewport offset — mini 全程用 real 坐标,避免每帧 materialize + IPC 风暴
-  if (typeof ctx.setViewportOffsetY === "function") ctx.setViewportOffsetY(0);
-  // 之后 real === virtual,用 real API 读取当前 y 作为 mini 起点
+  // viewport offset 保持不变 —— mini 全程用 real 坐标,offset 是常量,
+  // 不会有每帧 materialize + IPC 风暴。归零会让贴顶的宠物掉下一个透明上边距。
   const bounds = ctx.win.getBounds();
   miniMode = true;
   miniSleepPeeked = false;
@@ -394,6 +420,9 @@ function enterMiniMode(wa, viaMenu, edge) {
 function exitMiniMode() {
   if (!miniMode) return;
   cancelMiniTransition();
+  // The parabola below animates real bounds to the stored *virtual* position,
+  // so hand it a window whose offset is already folded into its y.
+  detachViewportOffset();
   // Keep miniMode = true and miniTransitioning = true during exit parabola.
   // This blocks ALL paths that check miniMode (always-on-top-changed,
   // display-metrics-changed, move-window-by, checkMiniModeSnap, etc.)
@@ -457,8 +486,7 @@ function enterMiniViaMenu() {
   const virtualBounds = ctx.getPetWindowBounds();
   preMiniX = virtualBounds.x;
   preMiniY = virtualBounds.y;
-  // 清零 viewport offset — 和 enterMiniMode 对称
-  if (typeof ctx.setViewportOffsetY === "function") ctx.setViewportOffsetY(0);
+  // offset 保持不变 — 和 enterMiniMode 对称
   const bounds = ctx.win.getBounds();
   const size = _getSize();
   const wa = ctx.getNearestWorkArea(bounds.x + size.width / 2, bounds.y + size.height / 2);
@@ -585,9 +613,11 @@ function restoreFromPrefs(prefs, size) {
   const wa = ctx.getNearestWorkArea(prefs.x + size.width / 2, prefs.y + size.height / 2);
   lastMiniWorkArea = wa;
   currentMiniX = calcMiniX(wa, size);
-  // 启动恢复 mini 时 y 必须在工作区内(保证 offset = 0,符合 mini 语义)
-  const startY = Math.max(wa.y, Math.min(prefs.y, wa.y + wa.height - size.height));
-  miniSnap = { y: startY, width: size.width, height: size.height };
+  // prefs.y 是 virtual y(贴顶时低于 workArea.y)。原样返回,让启动时的
+  // materializeVirtualBounds 重建 offset —— 这里夹到 wa.y 会让贴顶的 mini
+  // 宠物每次重启都往下掉一个透明上边距。miniSnap 存的是 real y。
+  const startY = Math.min(prefs.y, wa.y + wa.height - size.height);
+  miniSnap = { y: Math.max(wa.y, startY), width: size.width, height: size.height };
   miniMode = true;
   miniTransitioning = false;
   miniSleepPeeked = false;
@@ -595,7 +625,7 @@ function restoreFromPrefs(prefs, size) {
   // Compute the seam state only — the render window does not exist yet at
   // startup restore. The renderer clip is (re)sent by
   // syncRendererStateAfterLoad() once the renderer has finished loading.
-  refreshContainedBoundary(wa, startY + size.height / 2);
+  refreshContainedBoundary(wa, miniSnap.y + size.height / 2);
   return { x: currentMiniX, y: startY, width: size.width, height: size.height };
 }
 

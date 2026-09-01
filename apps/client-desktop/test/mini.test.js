@@ -562,3 +562,83 @@ describe("mini mode restore screen ownership", () => {
     );
   });
 });
+
+// A pet dragged to the very top sits at real y = workArea.y with the artwork
+// pulled up by viewportOffsetY (its transparent top margin). Mini mode used to
+// zero that offset without moving the window, so the pet dropped by the margin
+// the moment it snapped to the wall and could never reach the top of the screen.
+describe("mini mode keeps a top-pinned pet at the top", () => {
+  let loader;
+
+  const FULL_SCREEN = [{
+    bounds: { x: 0, y: 0, width: 800, height: 600 },
+    workArea: { x: 0, y: 0, width: 800, height: 600 },
+  }];
+  const OFFSET = 20;
+
+  function makePinnedCtx() {
+    const ctx = makeCtx(cloneTheme(_defaultTheme), [], 600);
+    ctx.viewportOffsets = [];
+    // Pinned to the top: real y = workArea.y, virtual y = one margin above it.
+    ctx.win.setBounds({ ...ctx.getBoundsSnapshot(), y: 0 });
+    ctx.getPetWindowBounds = () => {
+      const b = ctx.getBoundsSnapshot();
+      return { ...b, y: b.y - OFFSET };
+    };
+    ctx.setViewportOffsetY = (v) => ctx.viewportOffsets.push(v);
+    return ctx;
+  }
+
+  beforeEach(() => {
+    mock.timers.enable({ apis: ["setTimeout", "Date"] });
+  });
+
+  afterEach(() => {
+    if (loader) loader.restore();
+    mock.timers.reset();
+    loader = null;
+  });
+
+  it("does not drop the pet when snapping to the wall", () => {
+    loader = loadMiniWithElectron({ getAllDisplays() { return FULL_SCREEN; } });
+    const ctx = makePinnedCtx();
+    const mini = loader.initMini(ctx);
+
+    mini.enterMiniMode(FULL_SCREEN[0].workArea, false, "right");
+    mock.timers.tick(1140);
+
+    assert.deepStrictEqual(ctx.viewportOffsets, [], "mini kept the inherited offset");
+    assert.equal(ctx.getBoundsSnapshot().y, 0, "window stayed pinned to the top");
+    assert.equal(mini.getMiniSnap().y, 0, "miniSnap tracks the real y");
+    assert.equal(mini.getPreMiniY(), -OFFSET, "pre-mini restore point stays virtual");
+  });
+
+  it("folds the offset back into real y before the exit jump", () => {
+    loader = loadMiniWithElectron({ getAllDisplays() { return FULL_SCREEN; } });
+    const ctx = makePinnedCtx();
+    const mini = loader.initMini(ctx);
+
+    mini.enterMiniMode(FULL_SCREEN[0].workArea, false, "right");
+    mock.timers.tick(1140);
+    ctx.viewportOffsets.length = 0;
+    mini.exitMiniMode();
+
+    assert.deepStrictEqual(ctx.viewportOffsets, [0], "exit hands the parabola real === virtual");
+    mock.timers.tick(400);
+    assert.equal(ctx.getBoundsSnapshot().y, -OFFSET, "pet lands back on its virtual y");
+  });
+
+  it("restoreFromPrefs returns the saved virtual y so startup rebuilds the offset", () => {
+    loader = loadMiniWithElectron({ getAllDisplays() { return FULL_SCREEN; } });
+    const ctx = makePinnedCtx();
+    const mini = loader.initMini(ctx);
+
+    const restored = mini.restoreFromPrefs(
+      { x: 700, y: -OFFSET, preMiniX: 200, preMiniY: -OFFSET, miniEdge: "right" },
+      { width: 120, height: 120 },
+    );
+
+    assert.equal(restored.y, -OFFSET, "virtual y survives restore");
+    assert.equal(mini.getMiniSnap().y, 0, "miniSnap holds the materialized real y");
+  });
+});
