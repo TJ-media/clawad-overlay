@@ -98,6 +98,11 @@ function computeRuntimeId(packageJson) {
   return crypto.createHash('sha256').update(`electron=${electron}\n${sorted}`).digest('hex');
 }
 
+// CLAW-283: asar와 함께 unpacked 묶음도 담는다.
+//
+// asarUnpack 대상(themes·hooks·agents·assets·extensions)은 app.asar 밖에 있어서, asar만
+// 갈면 테마·훅 변경이 사용자에게 닿지 않는다. 0.2.12가 그렇게 나갔다. runtimeId가 지키는
+// 것은 87MB짜리 네이티브 트리(node_modules)뿐이고 우리 에셋은 그 관할이 아니다.
 const runtimeId = computeRuntimeId(pkg);
 const codeUpdate = {};
 for (const arch of ['arm64', 'x64']) {
@@ -105,12 +110,28 @@ for (const arch of ['arm64', 'x64']) {
   const filePath = path.join(DIST, file);
   if (!fs.existsSync(filePath)) continue;
   const bytes = fs.readFileSync(filePath);
+
+  // asar만 있고 묶음이 없으면 새 CLI는 경량 경로를 포기하고 전체 교체로 내려간다 —
+  // 앱은 멀쩡하지만 130MB 경로로 조용히 되돌아간 것을 아무도 눈치채지 못한다. 여기서 막는다.
+  const unpackedFile = `app-${version}-${arch}.unpacked.tar.gz`;
+  const unpackedPath = path.join(DIST, unpackedFile);
+  if (!fs.existsSync(unpackedPath)) {
+    fail(`${file}는 있는데 ${unpackedFile}가 없습니다. collect-asar.js가 둘 다 만들어야 합니다.`);
+  }
+  const unpackedBytes = fs.readFileSync(unpackedPath);
+
   codeUpdate[`darwin-${arch}`] = {
     url: `https://github.com/${REPO_SLUG}/releases/download/v${version}/${file}`,
     sha256: crypto.createHash('sha256').update(bytes).digest('hex'),
     bytes: bytes.length,
+    unpacked: {
+      url: `https://github.com/${REPO_SLUG}/releases/download/v${version}/${unpackedFile}`,
+      sha256: crypto.createHash('sha256').update(unpackedBytes).digest('hex'),
+      bytes: unpackedBytes.length,
+    },
   };
   published.push({ key: `asar-${arch}`, file, size: bytes.length });
+  published.push({ key: `unpacked-${arch}`, file: unpackedFile, size: unpackedBytes.length });
 }
 
 // 0.1.12까지 배포된 CLI는 artifacts를 모르고 최상위의 평평한 필드만 읽는다. 그 CLI가
