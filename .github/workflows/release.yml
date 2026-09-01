@@ -83,6 +83,7 @@ jobs:
             apps/client-desktop/dist/*.blockmap
             apps/client-desktop/dist/latest*.yml
             apps/client-desktop/dist/*.asar
+            apps/client-desktop/dist/*.unpacked.tar.gz
           if-no-files-found: error
           retention-days: 7
 
@@ -125,4 +126,4 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --title "클로애드 오버레이 $GITHUB_REF_NAME (알파)" \
             --notes "무서명 알파 빌드입니다. 설치는 클로애드 CLI의 setup 명령을 쓰세요." \
-            dist/*.exe dist/*.zip dist/*.dmg dist/*.blockmap dist/latest*.yml dist/*.asar dist/overlay-manifest.json
+            dist/*.exe dist/*.zip dist/*.dmg dist/*.blockmap dist/latest*.yml dist/*.asar             dist/*.unpacked.tar.gz dist/overlay-manifest.json
