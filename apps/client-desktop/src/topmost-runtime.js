@@ -59,6 +59,7 @@ function createTopmostRuntime(options = {}) {
   const isMac = options.isMac != null ? !!options.isMac : process.platform === "darwin";
   const getWin = defaultGetter(options.getWin || null);
   const getHitWin = defaultGetter(options.getHitWin || null);
+  const getClawadAdWindow = defaultGetter(options.getClawadAdWindow || null);
   const getPendingPermissions = options.getPendingPermissions || (() => []);
   const getUpdateBubbleWindow = options.getUpdateBubbleWindow || (() => null);
   const getSessionHudWindow = options.getSessionHudWindow || (() => null);
@@ -110,6 +111,7 @@ function createTopmostRuntime(options = {}) {
   // exponential backoff; the watchdog only decides WHEN it's appropriate to
   // try at all (see the fullscreen stand-down at the call site).
   const recoverCloakedPet = options.recoverCloakedPet || (() => {});
+  const recoverCloakedAd = options.recoverCloakedAd || (() => {});
   const setForceEyeResend = options.setForceEyeResend || (() => {});
   const applyPetWindowPosition = options.applyPetWindowPosition || (() => {});
   const syncHitWin = options.syncHitWin || (() => {});
@@ -144,6 +146,31 @@ function createTopmostRuntime(options = {}) {
   let imeEditingHitIgnoreApplied = false;
   let imeEditingFadeCancel = null;
 
+  function isTopmostStandDown() {
+    return isForegroundFullscreen() && !getFullscreenOverlay();
+  }
+
+  /** 광고를 먼저 올린 뒤 펫·입력창을 올려 ad < pet < hit 순서를 만든다. */
+  function reassertAdBelowPet() {
+    if (!isWin || isTopmostStandDown()) return false;
+    const adWin = getClawadAdWindow();
+    const win = getWin();
+    const hitWin = getHitWin();
+    if (isLiveWindow(adWin)) adWin.setAlwaysOnTop(true, WIN_TOPMOST_LEVEL);
+    if (isLiveWindow(win)) win.setAlwaysOnTop(true, WIN_TOPMOST_LEVEL);
+    if (isLiveWindow(hitWin)) hitWin.setAlwaysOnTop(true, WIN_TOPMOST_LEVEL);
+    return true;
+  }
+
+  /** watchdog와 resume/unlock이 공유하는 전체화면 안전 cloak 복구 진입점. */
+  function recoverCloakedWindows() {
+    if (!isWin) return "unavailable";
+    if (isTopmostStandDown()) return "stand-down";
+    recoverCloakedAd();
+    recoverCloakedPet();
+    return "attempted";
+  }
+
   function reassertWinTopmost() {
     if (!isWin) return;
     // A fullscreen foreground app owns the screen — stand down so the pet/hit
@@ -155,7 +182,7 @@ function createTopmostRuntime(options = {}) {
     // single drag would yank the pet back in front of the fullscreen game.
     // #562: in fullscreen-overlay mode keep re-topping over the fullscreen app
     // rather than standing down here (drag funnels through this function).
-    if (isForegroundFullscreen() && !getFullscreenOverlay()) return;
+    if (isTopmostStandDown()) return;
     const win = getWin();
     const hitWin = getHitWin();
     if (isLiveWindow(win)) win.setAlwaysOnTop(true, WIN_TOPMOST_LEVEL);
@@ -432,16 +459,19 @@ function createTopmostRuntime(options = {}) {
       if (isOnTop || !isLiveWindow(winToGuard)) return;
       const renderWin = getWin();
       const hitLayerWin = getHitWin();
+      const adLayerWin = getClawadAdWindow();
       // A fullscreen app legitimately took topmost — don't fight back (no
       // re-top, no 1px nudge, no HWND recovery). The 5s watchdog restores the
       // pet within a cycle once the user leaves fullscreen (#538).
-      if ((winToGuard === renderWin || winToGuard === hitLayerWin) && isForegroundFullscreen() && !getFullscreenOverlay()) return;
+      if ((winToGuard === renderWin || winToGuard === hitLayerWin || winToGuard === adLayerWin) && isTopmostStandDown()) return;
       if (winToGuard === renderWin) {
         // Re-topping only the render window would re-insert it at the top of
         // the topmost band, briefly leaving the hit window beneath it
         // (z-order inversion). reassertWinTopmost re-tops win then hitWin, so
         // the hit layer lands back above the pet.
         reassertWinTopmost();
+      } else if (winToGuard === adLayerWin) {
+        reassertAdBelowPet();
       } else {
         winToGuard.setAlwaysOnTop(true, WIN_TOPMOST_LEVEL);
       }
@@ -490,13 +520,16 @@ function createTopmostRuntime(options = {}) {
       // focus (focusable, there) are independent decisions (#562).
       const fsForeground = isForegroundFullscreen();
       const skipTopmost = fsForeground && !getFullscreenOverlay();
+      // 같은 topmost 레벨은 나중에 올린 창이 위에 놓인다. 광고를 먼저 올려
+      // 외부 최상단 창보다 위, 펫과 입력창보다 아래에 둔다 (CLAW-287).
+      reassertWindowAndTaskbar(getClawadAdWindow(), { skipTopmost });
       reassertWindowAndTaskbar(getWin(), { skipTopmost });
       reassertWindowAndTaskbar(getHitWin(), { skipTopmost });
 
       // #525: periodic cloak self-heal. Skipped while standing down for a
       // fullscreen app — recovery calls showInactive()/setAlwaysOnTop, exactly
       // the interference stand-down exists to avoid (§8.3).
-      if (!skipTopmost) recoverCloakedPet();
+      if (!skipTopmost) recoverCloakedWindows();
 
       for (const perm of getPendingPermissions()) {
         const bubble = perm && perm.bubble;
@@ -580,7 +613,9 @@ function createTopmostRuntime(options = {}) {
   }
 
   return {
+    reassertAdBelowPet,
     reassertWinTopmost,
+    recoverCloakedWindows,
     reapplyMacVisibility,
     syncImeEditingPetDodge,
     getPetTargetOpacity,

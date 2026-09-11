@@ -11,6 +11,7 @@ const path = require("node:path");
 const {
   createAdRuntime,
   isWorkActive,
+  isWorkRunning,
   readAdInventoryExhausted,
   readPolicyCache,
   readRewardSummary,
@@ -90,6 +91,43 @@ test("작업 중이고 번들이 있으면 광고 한 건을 표시한다", () =
   assert.strictEqual(ad.brand, "클로애드");
   assert.strictEqual(ad.maxWidthPx, POLICY.maxWidthPx);
   assert.strictEqual(runtime.displayedToken, "token.a");
+});
+
+test("렌더 ACK가 필요한 런타임은 실제 페인트 시각부터만 표시 구간을 기록한다 (CLAW-287)", () => {
+  const data = makeData();
+  const runtime = createAdRuntime({
+    dataDir: data,
+    requireRenderAck: true,
+    spawnCollector: (_pointer, done) => done(),
+  });
+  const preparedAt = Date.now();
+
+  const ad = runtime.tick(preparedAt);
+  assert.ok(ad && typeof ad.renderId === "string" && ad.renderId.length > 0);
+  assert.strictEqual(runtime.displayedToken, null, "ACK 전 후보는 표시 중으로 세면 안 된다");
+  runtime.stop(preparedAt + POLICY.minViewMs + 1000);
+  assert.deepStrictEqual(spoolFiles(data), [], "픽셀이 그려지지 않은 후보는 스풀을 만들면 안 된다");
+
+  const retry = runtime.tick(preparedAt + POLICY.minViewMs + 2000);
+  const paintedAt = preparedAt + POLICY.minViewMs + 2100;
+  assert.strictEqual(runtime.confirmRendered(retry.renderId, paintedAt), true);
+  assert.strictEqual(runtime.displayedToken, "token.a");
+  runtime.stop(paintedAt + POLICY.minViewMs);
+
+  const [spooled] = spoolContents(data);
+  assert.strictEqual(spooled.renderStarted, paintedAt);
+  assert.strictEqual(spooled.displayStartedAt, paintedAt);
+  assert.strictEqual(spooled.displayEndedAt, paintedAt + POLICY.minViewMs);
+  assert.ok(!JSON.stringify(spooled).includes("renderId"), "로컬 ACK ID는 스풀로 나가면 안 된다");
+});
+
+test("현재 후보와 다른 렌더 ACK는 무시한다 (CLAW-287)", () => {
+  const data = makeData();
+  const runtime = createAdRuntime({ dataDir: data, requireRenderAck: true });
+  const ad = runtime.tick(Date.now());
+
+  assert.strictEqual(runtime.confirmRendered(`${ad.renderId}-stale`, Date.now()), false);
+  assert.strictEqual(runtime.displayedToken, null);
 });
 
 test("회전 주기 안에는 같은 광고를 유지하고, 주기가 끝나면 다음 광고로 바꾼다", () => {
@@ -229,6 +267,25 @@ test("작업이 멈추면 광고를 숨기고 그때까지의 구간을 남긴�
   assert.strictEqual(runtime.displayedToken, null);
 });
 
+test("화면 표시용 작업 판정은 방금 끝난 세션도 즉시 비활성으로 본다 (CLAW-287)", () => {
+  const data = makeData({ active: false });
+  writeActive(data, { active: false, endedAgoMs: 1 });
+
+  assert.strictEqual(isWorkActive(data, Date.now(), POLICY.idleThresholdMs, POLICY.staleActiveMs), true,
+    "기존 수거 호환 판정은 유예 구간을 유지한다");
+  assert.strictEqual(isWorkRunning(data, Date.now(), POLICY.staleActiveMs), false,
+    "화면은 Stop 직후 바로 꺼져야 한다");
+});
+
+test("운영 오버레이의 strict activity 게이트는 Stop 직후 광고 후보를 반환하지 않는다 (CLAW-287)", () => {
+  const data = makeData({ active: false });
+  writeActive(data, { active: false, endedAgoMs: 1 });
+  const runtime = createAdRuntime({ dataDir: data, strictActivity: true, requireRenderAck: true });
+
+  assert.strictEqual(runtime.tick(Date.now()), null);
+  assert.strictEqual(runtime.pendingRenderId, null);
+});
+
 test("표시한 토큰은 다시 고르지 않는다 — serveToken은 단일 사용이다", () => {
   const data = makeData({ bundles: [bundle("token.only")] });
   const { runtime } = runtimeWithRecorder(data);
@@ -335,7 +392,8 @@ function writeZombie(dataDir, startedAgoMs) {
 test("staleActiveMs를 넘긴 좀비 active 세션은 작업 중으로 보지 않는다 (CLAW-142)", () => {
   const S = POLICY.staleActiveMs;
   const zombie = makeData({ active: false });
-  writeZombie(zombie, S + 60000);
+  // 경계값과 Date.now()가 같은 millisecond에 잡혀도 결정적이도록 유휴 임계를 확실히 넘긴다.
+  writeZombie(zombie, S + POLICY.idleThresholdMs + 1000);
   assert.strictEqual(isWorkActive(zombie, Date.now(), POLICY.idleThresholdMs, S), false);
 
   // 임계 안이면 여전히 작업 중이다 — 긴 턴을 끊어버리면 안 된다.

@@ -1439,7 +1439,9 @@ const topmostRuntime = createTopmostRuntime({
   isMac,
   getWin: () => win,
   getHitWin: () => hitWin,
+  getClawadAdWindow: () => (_clawadAd ? _clawadAd.getWindow() : null),
   recoverCloakedPet: () => petWindowRuntime.recoverIfCloaked(),
+  recoverCloakedAd: () => (_clawadAd ? _clawadAd.recoverIfCloaked() : "no-window"),
   getPendingPermissions: () => pendingPermissions,
   getUpdateBubbleWindow: () => _updateBubble.getBubbleWindow(),
   getSessionHudWindow: () => getSessionHudWindow(),
@@ -1463,6 +1465,8 @@ const topmostRuntime = createTopmostRuntime({
 });
 const {
   reassertWinTopmost,
+  reassertAdBelowPet,
+  recoverCloakedWindows,
   reapplyMacVisibility,
   isNearWorkAreaEdge,
   scheduleHwndRecovery,
@@ -2100,6 +2104,8 @@ _clawadAd = require("./clawad-ad-window")({
   getTextScale: () => getTextScaleForPetWindows(),
   guardAlwaysOnTop,
   reapplyMacVisibility,
+  cloakInspector: _cloakInspector,
+  reassertAdBelowPet,
 });
 
 agentRuntime = createAgentRuntimeMain({
@@ -3389,8 +3395,12 @@ if (!gotTheLock) {
     // a main-process concern that must not depend on renderer health. The two
     // paths coexist; recoverIfCloaked() is a no-op when nothing is cloaked.
     if (isWin) {
-      powerMonitor.on("resume", () => petWindowRuntime.recoverIfCloaked());
-      powerMonitor.on("unlock-screen", () => petWindowRuntime.recoverIfCloaked());
+      powerMonitor.on("resume", () => {
+        recoverCloakedWindows();
+      });
+      powerMonitor.on("unlock-screen", () => {
+        recoverCloakedWindows();
+      });
     }
     // macOS: bridge the OS app-hidden state (⌘H / Dock right-click → 隐藏) to the
     // pet. Pet windows are setCanHide:NO, so the OS marks the app hidden but the

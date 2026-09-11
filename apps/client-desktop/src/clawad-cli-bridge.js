@@ -42,4 +42,56 @@ function resolveSiblingCommand(scriptName, options = {}) {
   return { node: pointer.node, script };
 }
 
-module.exports = { TRIGGER_FILE_NAME, TRIGGER_SCRIPT_NAME, readJsonFile, resolveSiblingCommand };
+function defaultSpawnCommand(command, args, done) {
+  const { spawn } = require("node:child_process");
+  const child = spawn(command.node, [command.script, ...args], {
+    stdio: "ignore",
+    windowsHide: true,
+    detached: false,
+  });
+  let settled = false;
+  const finish = () => {
+    if (settled) return;
+    settled = true;
+    done();
+  };
+  child.on("error", finish);
+  child.on("close", finish);
+  child.unref();
+}
+
+/** 검증된 CLI sibling 명령을 중복 없이 실행하는 작은 프로세스 수명 runner. */
+function createSiblingCommandRunner(scriptName, options = {}) {
+  const cooldownMs = Number.isFinite(options.cooldownMs) && options.cooldownMs >= 0 ? options.cooldownMs : 30000;
+  const now = typeof options.now === "function" ? options.now : Date.now;
+  const spawnCommand = options.spawnCommand || defaultSpawnCommand;
+  let busy = false;
+  let lastStartedAt = -Infinity;
+
+  function run(args = []) {
+    const safeArgs = Array.isArray(args) && args.every((arg) => typeof arg === "string") ? args : [];
+    const startedAt = now();
+    if (busy || startedAt - lastStartedAt < cooldownMs) return false;
+    const command = resolveSiblingCommand(scriptName, options);
+    if (!command) return false;
+    busy = true;
+    lastStartedAt = startedAt;
+    try {
+      spawnCommand(command, safeArgs, () => { busy = false; });
+      return true;
+    } catch {
+      busy = false;
+      return false;
+    }
+  }
+
+  return { run };
+}
+
+module.exports = {
+  TRIGGER_FILE_NAME,
+  TRIGGER_SCRIPT_NAME,
+  createSiblingCommandRunner,
+  readJsonFile,
+  resolveSiblingCommand,
+};
