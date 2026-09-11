@@ -175,6 +175,23 @@ function isWorkActive(dataDir, now, idleThresholdMs, staleActiveMs) {
   return false;
 }
 
+/**
+ * 화면 가시성용 작업 판정. 진행 중인 세션만 true이며 Stop 뒤의 유예 구간은 포함하지 않는다.
+ * 수거 호환 판정(isWorkActive)은 그대로 두고, UX 동기화가 필요한 오버레이에서만 사용한다.
+ */
+function isWorkRunning(dataDir, now, staleActiveMs) {
+  const dir = path.join(dataDir, WORK_STATE_DIR_NAME);
+  let names = [];
+  try { names = fs.readdirSync(dir); } catch { return false; }
+  for (const name of names) {
+    if (!SESSION_FILE_PATTERN.test(name)) continue;
+    const activity = readJsonFile(path.join(dir, name));
+    if (!activity || activity.version !== 1 || activity.active !== true || !Number.isFinite(activity.startedAt)) continue;
+    if (staleActiveMs <= 0 || now - activity.startedAt <= staleActiveMs) return true;
+  }
+  return false;
+}
+
 /** 광고 문구 정화. 제어문자·ANSI 이스케이프를 제거하고 길이를 제한한다. */
 function safeText(value, maxLength) {
   return String(value || "")
@@ -257,6 +274,8 @@ function readTriggerPointer(dataDir) {
 function createAdRuntime(options = {}) {
   const dataDir = options.dataDir || clawadDataDir();
   const spawnCollector = options.spawnCollector || defaultSpawnCollector;
+  const requireRenderAck = options.requireRenderAck === true;
+  const strictActivity = options.strictActivity === true;
   /** 스풀에 남긴 토큰. serveToken은 단일 사용이므로 다시 쓰지 않는다. */
   const spooledTokens = new Set();
   /**
@@ -269,6 +288,8 @@ function createAdRuntime(options = {}) {
   /** 현재 표시 중인 구간. { serveToken, renderStarted, displayStartedAt } */
   let current = null;
   let currentBundle = null;
+  /** ACK를 기다리는 표시 후보. 실제 노출 구간에는 아직 포함되지 않는다. */
+  let pending = null;
   let collectorBusy = false;
   /**
    * 직전에 스풀로 남긴 인정 구간의 종료 시각 (CLAW-135). 다음 구간의 시작을 여기서
@@ -301,6 +322,10 @@ function createAdRuntime(options = {}) {
     lastSpooledEndAt = finished.displayEndedAt;
     triggerCollector();
     return file;
+  }
+
+  function cancelPending() {
+    pending = null;
   }
 
   /**
@@ -355,10 +380,15 @@ function createAdRuntime(options = {}) {
   function tick(now = Date.now()) {
     const policy = readPolicyCache(dataDir);
     if (!policy) {
+      cancelPending();
       finishCurrent(now, null);
       return null;
     }
-    if (!isWorkActive(dataDir, now, policy.idleThresholdMs, policy.staleActiveMs)) {
+    const working = strictActivity
+      ? isWorkRunning(dataDir, now, policy.staleActiveMs)
+      : isWorkActive(dataDir, now, policy.idleThresholdMs, policy.staleActiveMs);
+    if (!working) {
+      cancelPending();
       finishCurrent(now, policy);
       return null;
     }
@@ -367,7 +397,10 @@ function createAdRuntime(options = {}) {
     // 회전 주기가 같이 늘어난다. 화면 리듬은 adRotateMs 그대로 유지한다.
     if (current && currentBundle && now - current.renderStarted < policy.adRotateMs) {
       // 적립 현황은 매 tick 다시 읽는다 — 같은 소재를 보여주는 동안 sync가 값을 갱신하면 반영된다.
-      return displayPayload(currentBundle, policy.maxWidthPx, readRewardSummary(dataDir));
+      return { ...displayPayload(currentBundle, policy.maxWidthPx, readRewardSummary(dataDir)), renderId: current.renderId };
+    }
+    if (pending) {
+      return { ...displayPayload(pending.bundle, policy.maxWidthPx, readRewardSummary(dataDir)), renderId: pending.renderId };
     }
     // finishCurrent가 current를 비우므로 직전 소재를 미리 잡아둔다 — 연속 반복 방지용이다.
     const previousToken = current ? current.serveToken : null;
@@ -375,19 +408,57 @@ function createAdRuntime(options = {}) {
     const bundles = readBundles(dataDir, now);
     const bundle = chooseBundle(bundles, previousToken);
     if (!bundle) return null;
+    if (requireRenderAck) {
+      pending = { bundle, renderId: crypto.randomBytes(16).toString("hex") };
+      return { ...displayPayload(bundle, policy.maxWidthPx, readRewardSummary(dataDir)), renderId: pending.renderId };
+    }
     currentBundle = bundle;
-    current = { serveToken: bundle.serveToken, renderStarted: now, displayStartedAt: countedStartAt(now, policy) };
+    current = { serveToken: bundle.serveToken, renderStarted: now, displayStartedAt: countedStartAt(now, policy), renderId: null };
     return displayPayload(bundle, policy.maxWidthPx, readRewardSummary(dataDir));
+  }
+
+  /** 렌더러가 두 프레임 뒤 보낸 현재 후보의 ACK만 실제 표시 시작으로 확정한다. */
+  function confirmRendered(renderId, now = Date.now()) {
+    if (typeof renderId !== "string" || renderId.length === 0) return false;
+    if (current && current.renderId === renderId) return true;
+    if (!pending || pending.renderId !== renderId) return false;
+    const policy = readPolicyCache(dataDir);
+    if (!policy) {
+      cancelPending();
+      return false;
+    }
+    if (strictActivity && !isWorkRunning(dataDir, now, policy.staleActiveMs)) {
+      cancelPending();
+      return false;
+    }
+    currentBundle = pending.bundle;
+    current = {
+      serveToken: pending.bundle.serveToken,
+      renderStarted: now,
+      displayStartedAt: countedStartAt(now, policy),
+      renderId: pending.renderId,
+    };
+    cancelPending();
+    return true;
   }
 
   /** 종료·일시중지에서 호출한다. 표시 중이던 구간을 닫고 스풀에 남긴다. */
   function stop(now = Date.now()) {
+    cancelPending();
     return finishCurrent(now, readPolicyCache(dataDir));
   }
 
   /** 광고를 표시할 준비가 됐는가 = 서피스 락을 쥘 자격이 있는가 (CLAW-119의 옵트인을 대체). */
   function canRender(now = Date.now()) {
     return Boolean(readPolicyCache(dataDir)) && readBundles(dataDir, now).length > 0;
+  }
+
+  /** 최근 종료 유예를 제외한 현재 화면용 작업 상태. */
+  function isWorking(now = Date.now()) {
+    const policy = readPolicyCache(dataDir);
+    // 정책이 아직 내려오지 않은 첫 실행에서도 작업 시작은 sync를 깨울 수 있다.
+    // 이 값만으로 광고를 표시하거나 노출을 기록하지 않으므로 정책값을 추측하지 않는다.
+    return isWorkRunning(dataDir, now, policy ? policy.staleActiveMs : 0);
   }
 
   /**
@@ -407,7 +478,10 @@ function createAdRuntime(options = {}) {
 
   return {
     canRender,
+    cancelPending,
+    confirmRendered,
     displayContext,
+    isWorking,
     rewardShopUrl: () => {
       const policy = readPolicyCache(dataDir);
       return policy && policy.rewardShopUrl ? policy.rewardShopUrl : null;
@@ -416,6 +490,7 @@ function createAdRuntime(options = {}) {
     tick,
     get dataDir() { return dataDir; },
     get displayedToken() { return current ? current.serveToken : null; },
+    get pendingRenderId() { return pending ? pending.renderId : null; },
   };
 }
 
@@ -439,6 +514,7 @@ module.exports = {
   TRIGGER_SCRIPT_BASENAME,
   createAdRuntime,
   isWorkActive,
+  isWorkRunning,
   readAdInventoryExhausted,
   readBundles,
   readPolicyCache,

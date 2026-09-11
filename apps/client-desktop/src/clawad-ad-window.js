@@ -8,8 +8,12 @@
 // 클릭 광고는 별도 동의가 필요한 기능이라 이 창은 입력을 전혀 받지 않는다.
 
 const path = require("node:path");
+const fs = require("node:fs");
 const { BrowserWindow, ipcMain, shell } = require("electron");
 const { createAdRuntime } = require("./clawad-ad-runtime");
+const { createSiblingCommandRunner } = require("./clawad-cli-bridge");
+const { classifyCloakState } = require("./win-cloak-recovery");
+const { WIN_TOPMOST_LEVEL } = require("./topmost-runtime");
 const clawadAuthState = require("./clawad-auth-state");
 const { ADS_EXHAUSTED_NOTICE, LOGIN_NOTICE, rotatingNotice } = require("./clawad-ad-notices");
 const clawadSurfaceLock = require("./clawad-surface-lock");
@@ -23,6 +27,10 @@ const isLinux = process.platform === "linux";
 
 /** 표시 재평가 주기. 노출 빈도 정책이 아니라 "지금 무엇을 보여줄지" 다시 계산하는 간격이다. */
 const TICK_MS = 1000;
+/** 페인트 ACK가 이 안에 없으면 빈/정지 렌더러로 보고 창을 다시 만든다. */
+const PAINT_ACK_TIMEOUT_MS = 2500;
+const FILE_CHANGE_DEBOUNCE_MS = 25;
+const PREPARING_NOTICE = "광고 준비 중…";
 /**
  * 2행 패널 높이(논리 픽셀). 세션 HUD처럼 body 여백을 두므로 그만큼 더 잡는다. 폭은 정책값 maxWidthPx.
  * 1행 17 + 행간 2 + 2행 14 + 패널 상하 패딩 10 + body 상하 여백 10 = 53에 여유 2 (CLAW-138).
@@ -49,7 +57,11 @@ function scaled(value, scale) {
 }
 
 module.exports = function initClawadAdWindow(ctx) {
-  const runtime = createAdRuntime({ dataDir: ctx.dataDir });
+  const runtime = createAdRuntime({ dataDir: ctx.dataDir, requireRenderAck: true, strictActivity: true });
+  const syncRunner = createSiblingCommandRunner("scheduled-sync.js", { dataDir: runtime.dataDir });
+  const setTimeoutFn = typeof ctx.setTimeout === "function" ? ctx.setTimeout : setTimeout;
+  const clearTimeoutFn = typeof ctx.clearTimeout === "function" ? ctx.clearTimeout : clearTimeout;
+  const watchFn = typeof ctx.watch === "function" ? ctx.watch : fs.watch;
   let adWindow = null;
   let ready = false;
   let timer = null;
@@ -57,6 +69,12 @@ module.exports = function initClawadAdWindow(ctx) {
   let lastBounds = null;
   let lastClickable = null;
   let ipcBound = false;
+  let paintAckTimer = null;
+  let waitingRenderId = null;
+  let recovering = false;
+  let watchDebounceTimer = null;
+  let dataWatcher = null;
+  let workStateWatcher = null;
   /** 렌더러가 마지막으로 알려준 내용 자연 폭(CSS px). 없으면 정책 상한을 그대로 쓴다. */
   let contentWidthPx = null;
 
@@ -93,7 +111,7 @@ module.exports = function initClawadAdWindow(ctx) {
     if (adWindow && !adWindow.isDestroyed()) return adWindow;
     ready = false;
     adWindow = new BrowserWindow({
-      parent: ctx.win && !ctx.win.isDestroyed() ? ctx.win : undefined,
+      ...(!isWin && ctx.win && !ctx.win.isDestroyed() ? { parent: ctx.win } : {}),
       width: 320,
       height: scaled(STRIP_HEIGHT, getScale()),
       show: false,
@@ -105,7 +123,7 @@ module.exports = function initClawadAdWindow(ctx) {
       maximizable: false,
       fullscreenable: false,
       skipTaskbar: true,
-      alwaysOnTop: !isMac,
+      alwaysOnTop: !isMac && !isWin,
       focusable: false,
       hasShadow: false,
       backgroundColor: "#00000000",
@@ -120,19 +138,74 @@ module.exports = function initClawadAdWindow(ctx) {
 
     // 기본은 클릭 통과다. 링크가 있는 광고를 표시할 때만 입력을 받는다(applyClickable).
     adWindow.setIgnoreMouseEvents(true, { forward: false });
-    if (isWin) adWindow.setAlwaysOnTop(true, "screen-saver");
+    if (isWin) {
+      if (typeof ctx.reassertAdBelowPet === "function") ctx.reassertAdBelowPet();
+      else adWindow.setAlwaysOnTop(true, WIN_TOPMOST_LEVEL);
+    }
     if (typeof ctx.guardAlwaysOnTop === "function") ctx.guardAlwaysOnTop(adWindow);
 
-    adWindow.loadFile(path.join(__dirname, "clawad-ad.html"));
+    const createdWindow = adWindow;
+    const recoverCreatedWindow = (reason) => {
+      if (adWindow !== createdWindow || createdWindow.isDestroyed()) return false;
+      return recoverWindow(reason);
+    };
     adWindow.webContents.once("did-finish-load", () => {
+      if (adWindow !== createdWindow || createdWindow.isDestroyed()) return;
       ready = true;
       if (lastPayload) send(lastPayload);
     });
-    adWindow.on("closed", () => {
-      adWindow = null;
-      ready = false;
+    adWindow.webContents.on("render-process-gone", () => recoverCreatedWindow("renderer gone"));
+    adWindow.webContents.on("did-fail-load", (_event, errorCode, _ignoredDescription, _ignoredUrl, isMainFrame) => {
+      if (isMainFrame === false || errorCode === -3) return;
+      recoverCreatedWindow(`load failed (${errorCode})`);
     });
+    adWindow.on("unresponsive", () => recoverCreatedWindow("renderer unresponsive"));
+    adWindow.on("closed", () => {
+      if (adWindow === createdWindow) {
+        adWindow = null;
+        ready = false;
+      }
+    });
+    adWindow.loadFile(path.join(__dirname, "clawad-ad.html"));
     return adWindow;
+  }
+
+  function clearPaintAckTimer() {
+    if (paintAckTimer) clearTimeoutFn(paintAckTimer);
+    paintAckTimer = null;
+    waitingRenderId = null;
+  }
+
+  function recoverWindow(reason) {
+    if (recovering) return false;
+    const failedWindow = adWindow;
+    if (!failedWindow || failedWindow.isDestroyed()) return false;
+    recovering = true;
+    clearPaintAckTimer();
+    // ACK된 구간도 장애가 난 시각에 닫아 빈 창 시간을 표시 사실에 포함하지 않는다.
+    try {
+      if (typeof runtime.stop === "function") runtime.stop(Date.now());
+      else if (typeof runtime.cancelPending === "function") runtime.cancelPending();
+    } catch { /* 창 복구를 막지 않는다 */ }
+    lastPayload = null;
+    ready = false;
+    try { failedWindow.destroy(); } catch { /* 다음 tick의 재생성을 막지 않는다 */ }
+    if (adWindow === failedWindow) adWindow = null;
+    recovering = false;
+    console.warn(`ClawAd: reset ad window after ${reason}`);
+    if (timer) requestTick();
+    return true;
+  }
+
+  function armPaintAck(renderId) {
+    if (typeof renderId !== "string" || renderId.length === 0 || waitingRenderId === renderId) return;
+    clearPaintAckTimer();
+    waitingRenderId = renderId;
+    paintAckTimer = setTimeoutFn(() => {
+      if (waitingRenderId !== renderId) return;
+      recoverWindow("paint ACK timeout");
+    }, PAINT_ACK_TIMEOUT_MS);
+    if (paintAckTimer && typeof paintAckTimer.unref === "function") paintAckTimer.unref();
   }
 
   function send(payload) {
@@ -148,8 +221,10 @@ module.exports = function initClawadAdWindow(ctx) {
         dismissible: payload.kind === "notice" && payload.dismissible === true,
         dismissLabel: payload.kind === "notice" && typeof payload.dismissLabel === "string" ? payload.dismissLabel : "",
         linked: payload.kind === "login" || Boolean(payload.clickUrl),
+        renderId: payload.kind === "ad" ? payload.renderId : undefined,
       }
       : null);
+    if (payload && payload.kind === "ad") armPaintAck(payload.renderId);
   }
 
   /**
@@ -168,6 +243,23 @@ module.exports = function initClawadAdWindow(ctx) {
     }
     const ad = runtime.tick(now);
     if (ad) return { ...ad, kind: "ad" };
+    if (typeof runtime.isWorking === "function" && runtime.isWorking(now)
+      && typeof runtime.canRender === "function" && !runtime.canRender(now)) {
+      syncRunner.run([runtime.dataDir]);
+      if (ctx.clawadNoticesHidden) return null;
+      const context = runtime.displayContext(now);
+      if (!context) return null;
+      return {
+        kind: "notice",
+        text: PREPARING_NOTICE,
+        brand: "",
+        reward: context.reward,
+        dismissible: false,
+        dismissLabel: "",
+        clickUrl: null,
+        maxWidthPx: context.maxWidthPx,
+      };
+    }
     if (ctx.clawadNoticesHidden) return null;
     const context = runtime.displayContext(now);
     if (!context) return null;
@@ -264,10 +356,12 @@ module.exports = function initClawadAdWindow(ctx) {
       keepOutOfTaskbar(win);
       if (typeof ctx.reapplyMacVisibility === "function") ctx.reapplyMacVisibility();
     }
+    if (isWin && typeof ctx.reassertAdBelowPet === "function") ctx.reassertAdBelowPet();
   }
 
   function hideAd() {
     lastPayload = null;
+    clearPaintAckTimer();
     if (!adWindow || adWindow.isDestroyed()) return;
     send(null);
     applyClickable(adWindow, false);
@@ -323,8 +417,56 @@ module.exports = function initClawadAdWindow(ctx) {
     } catch { /* 반환 실패는 statusline이 stale로 회수한다 */ }
   }
 
+  function requestTick() {
+    if (watchDebounceTimer) return;
+    watchDebounceTimer = setTimeoutFn(() => {
+      watchDebounceTimer = null;
+      try { tick(); } catch (err) { console.warn("ClawAd: watched state tick failed:", err && err.message); }
+    }, FILE_CHANGE_DEBOUNCE_MS);
+    if (watchDebounceTimer && typeof watchDebounceTimer.unref === "function") watchDebounceTimer.unref();
+  }
+
+  function watchWorkState() {
+    if (workStateWatcher) return;
+    try {
+      workStateWatcher = watchFn(path.join(runtime.dataDir, "work-state"), () => requestTick());
+      if (workStateWatcher && typeof workStateWatcher.unref === "function") workStateWatcher.unref();
+      if (workStateWatcher && typeof workStateWatcher.on === "function") {
+        workStateWatcher.on("error", () => {
+          try { workStateWatcher.close(); } catch {}
+          workStateWatcher = null;
+        });
+      }
+    } catch { /* 1초 poll과 상위 디렉터리 감시가 fallback이다 */ }
+  }
+
+  function startWatchers() {
+    watchWorkState();
+    if (dataWatcher) return;
+    try {
+      dataWatcher = watchFn(runtime.dataDir, (_event, filename) => {
+        const name = typeof filename === "string" ? filename : String(filename || "");
+        if (name === "work-state") watchWorkState();
+        if (!name || name === "work-state" || name === "bundles.json" || name === "overlay-policy.json"
+          || name === "reward-summary.json" || name === "ad-inventory.json") requestTick();
+      });
+      if (dataWatcher && typeof dataWatcher.unref === "function") dataWatcher.unref();
+    } catch { /* 1초 poll이 fallback이다 */ }
+  }
+
+  function stopWatchers() {
+    if (watchDebounceTimer) clearTimeoutFn(watchDebounceTimer);
+    watchDebounceTimer = null;
+    for (const watcher of [workStateWatcher, dataWatcher]) {
+      try { if (watcher && typeof watcher.close === "function") watcher.close(); } catch {}
+    }
+    workStateWatcher = null;
+    dataWatcher = null;
+  }
+
   function start() {
     if (timer) return;
+    startWatchers();
     if (!ipcBound) {
       // 렌더러는 "열어달라"만 보낸다. 어떤 URL을 열지는 메인이 결정한다.
       ipcMain.on("clawad-ad:open", (event) => {
@@ -349,6 +491,12 @@ module.exports = function initClawadAdWindow(ctx) {
         contentWidthPx = next;
         if (lastPayload) applyBounds(adWindow, lastPayload);
       });
+      ipcMain.on("clawad-ad:painted", (event, renderId) => {
+        if (!adWindow || adWindow.isDestroyed() || event.sender !== adWindow.webContents) return;
+        if (!lastPayload || lastPayload.kind !== "ad" || lastPayload.renderId !== renderId) return;
+        if (typeof runtime.confirmRendered !== "function" || !runtime.confirmRendered(renderId, Date.now())) return;
+        clearPaintAckTimer();
+      });
       ipcBound = true;
     }
     tick();
@@ -369,11 +517,15 @@ module.exports = function initClawadAdWindow(ctx) {
       clearInterval(timer);
       timer = null;
     }
+    stopWatchers();
+    clearPaintAckTimer();
     try { runtime.stop(); } catch { /* 종료 경로를 막지 않는다 */ }
     releaseSurface();
     if (ipcBound) {
       ipcMain.removeAllListeners("clawad-ad:open");
       ipcMain.removeAllListeners("clawad-ad:dismiss-notice");
+      ipcMain.removeAllListeners("clawad-ad:width");
+      ipcMain.removeAllListeners("clawad-ad:painted");
       ipcBound = false;
     }
     lastPayload = null;
@@ -382,6 +534,34 @@ module.exports = function initClawadAdWindow(ctx) {
     if (adWindow && !adWindow.isDestroyed()) adWindow.destroy();
     adWindow = null;
     ready = false;
+  }
+
+  /** Windows DWM cloak가 현재 데스크톱의 보이는 광고창을 가렸을 때 직접 해제한다. */
+  function recoverIfCloaked() {
+    const inspector = ctx.cloakInspector;
+    const target = adWindow;
+    if (!isWin || !inspector || !inspector.available || !target || target.isDestroyed() || !target.isVisible()) {
+      return "unavailable";
+    }
+    try {
+      const flag = inspector.readCloakState(target);
+      if (!flag) return "clean";
+      const verdict = classifyCloakState(flag, inspector.isOnCurrentVirtualDesktop(target));
+      if (verdict !== "recover") return verdict;
+      if (!inspector.uncloak(target)) {
+        recoverWindow("DWM cloak recovery failure");
+        return "failed";
+      }
+      target.showInactive();
+      if (typeof ctx.reassertAdBelowPet === "function") ctx.reassertAdBelowPet();
+      else target.setAlwaysOnTop(true, WIN_TOPMOST_LEVEL);
+      keepOutOfTaskbar(target);
+      if (inspector.readCloakState(target) === 0) return "recovered";
+      recoverWindow("persistent DWM cloak");
+      return "failed";
+    } catch {
+      return "failed";
+    }
   }
 
   return {
@@ -394,10 +574,11 @@ module.exports = function initClawadAdWindow(ctx) {
     getWindow: () => adWindow,
     openCurrentAd,
     reposition,
+    recoverIfCloaked,
     rewardShopUrl: () => runtime.rewardShopUrl(),
     start,
     tick,
   };
 };
 
-module.exports.__test = { STRIP_HEIGHT, TICK_MS, scaled };
+module.exports.__test = { FILE_CHANGE_DEBOUNCE_MS, PAINT_ACK_TIMEOUT_MS, PREPARING_NOTICE, STRIP_HEIGHT, TICK_MS, scaled };
