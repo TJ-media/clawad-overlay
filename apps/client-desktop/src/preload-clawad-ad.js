@@ -24,4 +24,6 @@ contextBridge.exposeInMainWorld("clawadAdAPI", {
   // 내용에 맞는 자연 폭(CSS px)을 메인에 알린다. 창이 곧 패널이라 폭 결정은 메인이 한다 —
   // 정책 상한·최소 폭·작업영역 클램프가 전부 메인에 있다 (CLAW-156).
   reportWidth: (px) => ipcRenderer.send("clawad-ad:width", px),
+  // DOM 갱신 뒤 두 animation frame을 지난 표시 후보만 메인에 확인한다.
+  reportPainted: (renderId) => ipcRenderer.send("clawad-ad:painted", renderId),
 });

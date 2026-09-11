@@ -199,7 +199,23 @@
     if (Number.isFinite(width) && width > 0) window.clawadAdAPI.reportWidth(width);
   }
 
+  let renderGeneration = 0;
+
+  function reportPaintedAfterTwoFrames(renderId, generation) {
+    if (typeof renderId !== "string" || renderId.length === 0) return;
+    if (typeof window.requestAnimationFrame !== "function") return;
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        if (generation !== renderGeneration) return;
+        if (!window.clawadAdAPI || typeof window.clawadAdAPI.reportPainted !== "function") return;
+        window.clawadAdAPI.reportPainted(renderId);
+      });
+    });
+  }
+
   function render(ad) {
+    renderGeneration += 1;
+    const generation = renderGeneration;
     if (!ad || typeof ad.text !== "string" || ad.text.length === 0) {
       strip.classList.remove("visible", "linked", "notice");
       text.textContent = "";
@@ -228,6 +244,7 @@
     syncMetaCutout();
     // 클래스까지 다 붙인 뒤에 잰다 — notice/linked가 [광고]↔[안내] 표기와 밑줄을 바꿔 폭이 달라진다.
     reportWidth();
+    reportPaintedAfterTwoFrames(ad.renderId, generation);
   }
 
   // 클릭은 "지금 표시 중인 광고를 열어달라"는 신호만 보낸다. URL은 메인이 갖고 있다.

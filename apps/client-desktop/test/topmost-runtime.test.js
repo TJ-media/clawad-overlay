@@ -70,6 +70,94 @@ function makeTimers() {
 }
 
 describe("topmost runtime Windows recovery", () => {
+  it("watchdog는 광고를 먼저, 펫과 입력창을 나중에 올려 z-order를 보장한다 (CLAW-287)", () => {
+    const timers = makeTimers();
+    const order = [];
+    const makeOrderedWindow = (name) => {
+      const window = new FakeWindow();
+      window.setAlwaysOnTop = (...args) => order.push([name, ...args]);
+      return window;
+    };
+    const ad = makeOrderedWindow("ad");
+    const pet = makeOrderedWindow("pet");
+    const hit = makeOrderedWindow("hit");
+    const runtime = createTopmostRuntime({
+      isWin: true,
+      getClawadAdWindow: () => ad,
+      getWin: () => pet,
+      getHitWin: () => hit,
+      setInterval: timers.setInterval,
+      clearInterval: timers.clearInterval,
+    });
+
+    runtime.startTopmostWatchdog();
+    timers.intervals[0].fn();
+
+    assert.deepStrictEqual(order, [
+      ["ad", true, createTopmostRuntime.WIN_TOPMOST_LEVEL],
+      ["pet", true, createTopmostRuntime.WIN_TOPMOST_LEVEL],
+      ["hit", true, createTopmostRuntime.WIN_TOPMOST_LEVEL],
+    ]);
+  });
+
+  it("전체화면 stand-down 중에는 광고 topmost와 cloak 복구도 쉬어 간다 (CLAW-287)", () => {
+    const timers = makeTimers();
+    const ad = new FakeWindow();
+    const recoveries = [];
+    const runtime = createTopmostRuntime({
+      isWin: true,
+      getClawadAdWindow: () => ad,
+      getWin: () => new FakeWindow(),
+      getHitWin: () => new FakeWindow(),
+      recoverCloakedAd: () => recoveries.push("ad"),
+      isForegroundFullscreen: () => true,
+      setInterval: timers.setInterval,
+      clearInterval: timers.clearInterval,
+    });
+
+    runtime.startTopmostWatchdog();
+    timers.intervals[0].fn();
+
+    assert.deepStrictEqual(ad.calls, []);
+    assert.deepStrictEqual(recoveries, []);
+  });
+
+  it("광고 topmost가 풀리면 광고→펫→입력창 순서로 복구한다 (CLAW-287)", () => {
+    const order = [];
+    const makeOrderedWindow = (name) => {
+      const window = new FakeWindow();
+      window.setAlwaysOnTop = (...args) => order.push([name, ...args]);
+      return window;
+    };
+    const ad = makeOrderedWindow("ad");
+    const pet = makeOrderedWindow("pet");
+    const hit = makeOrderedWindow("hit");
+    const runtime = createTopmostRuntime({
+      isWin: true,
+      getClawadAdWindow: () => ad,
+      getWin: () => pet,
+      getHitWin: () => hit,
+    });
+
+    runtime.guardAlwaysOnTop(ad);
+    ad.emit("always-on-top-changed", null, false);
+
+    assert.deepStrictEqual(order.map((call) => call[0]), ["ad", "pet", "hit"]);
+  });
+
+  it("resume용 cloak 복구도 전체화면 stand-down을 지킨다 (CLAW-287)", () => {
+    const recoveries = [];
+    const runtime = createTopmostRuntime({
+      isWin: true,
+      isForegroundFullscreen: () => true,
+      recoverCloakedAd: () => recoveries.push("ad"),
+      recoverCloakedPet: () => recoveries.push("pet"),
+    });
+
+    assert.strictEqual(runtime.recoverCloakedWindows(), "stand-down");
+    assert.deepStrictEqual(recoveries, []);
+  });
+
   it("reasserts the pet and hit windows at the Windows topmost level", () => {
     const win = new FakeWindow();
     const hitWin = new FakeWindow();

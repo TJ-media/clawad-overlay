@@ -54,6 +54,8 @@ function mountRenderer() {
   const body = {};
   global.document = { getElementById: (id) => nodes.get(id) || null, body };
   const reported = [];
+  const painted = [];
+  const animationFrames = [];
   let dismissed = 0;
   global.window = {
     // clawad-ad.html의 `body { padding: 2px 3px 8px; }`와 같은 값. 창 폭은 스트립 바깥의
@@ -67,6 +69,11 @@ function mountRenderer() {
       openAd: () => {},
       dismissNotice: () => { dismissed += 1; },
       reportWidth: (px) => reported.push(px),
+      reportPainted: (renderId) => painted.push(renderId),
+    },
+    requestAnimationFrame: (callback) => {
+      animationFrames.push(callback);
+      return animationFrames.length;
     },
   };
 
@@ -84,9 +91,31 @@ function mountRenderer() {
     noticeDismiss: nodes.get("notice-dismiss"),
     dismissed: () => dismissed,
     reported,
+    painted,
+    flushAnimationFrame: () => {
+      const callbacks = animationFrames.splice(0);
+      callbacks.forEach((callback) => callback());
+    },
     measuredCutouts,
   };
 }
+
+test("DOM 갱신 뒤 두 animation frame을 지난 현재 광고만 페인트 ACK한다 (CLAW-287)", () => {
+  const mounted = mountRenderer();
+
+  mounted.render({ ...ad(1, 1), renderId: "render-1" });
+  assert.deepStrictEqual(mounted.painted, []);
+  mounted.flushAnimationFrame();
+  assert.deepStrictEqual(mounted.painted, [], "첫 frame은 레이아웃 반영 대기다");
+  mounted.flushAnimationFrame();
+  assert.deepStrictEqual(mounted.painted, ["render-1"]);
+
+  mounted.render({ ...ad(2, 2), renderId: "render-stale" });
+  mounted.flushAnimationFrame();
+  mounted.render(null);
+  mounted.flushAnimationFrame();
+  assert.deepStrictEqual(mounted.painted, ["render-1"], "숨긴 뒤 지난 후보를 ACK하면 안 된다");
+});
 
 function ad(verifying, confirmed) {
   return { kind: "ad", text: "광고 문구", brand: "클로애드", linked: false, reward: { verifying, confirmed } };

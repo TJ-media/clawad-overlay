@@ -10,7 +10,7 @@ const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const path = require("node:path");
 
-const { resolveSiblingCommand } = require("../src/clawad-cli-bridge");
+const { createSiblingCommandRunner, resolveSiblingCommand } = require("../src/clawad-cli-bridge");
 
 const NODE = "/usr/local/bin/node";
 const INSTALL_DIR = path.join("/opt", "clawad", "client");
@@ -73,4 +73,31 @@ test("같은 검사로 로그인 스크립트도 끌어낸다 (§3.4)", () => {
     existing: [NODE, path.join(INSTALL_DIR, "login.js")],
   }));
   assert.deepStrictEqual(command, { node: NODE, script: path.join(INSTALL_DIR, "login.js") });
+});
+
+test("즉시 sync 요청은 실행 중 중복과 cooldown을 막고 검증된 sibling만 실행한다 (CLAW-287)", () => {
+  const calls = [];
+  let finished = null;
+  let now = 1000;
+  const runner = createSiblingCommandRunner("scheduled-sync.js", {
+    ...deps(validPointer(), { existing: [NODE, path.join(INSTALL_DIR, "scheduled-sync.js")] }),
+    cooldownMs: 5000,
+    now: () => now,
+    spawnCommand: (command, args, done) => {
+      calls.push([command, args]);
+      finished = done;
+    },
+  });
+
+  assert.strictEqual(runner.run(["/tmp/clawad-data"]), true);
+  assert.strictEqual(runner.run(["/tmp/clawad-data"]), false, "실행 중 중복 요청");
+  finished();
+  now = 5999;
+  assert.strictEqual(runner.run(["/tmp/clawad-data"]), false, "cooldown 안의 중복 요청");
+  now = 6000;
+  assert.strictEqual(runner.run(["/tmp/clawad-data"]), true);
+  assert.deepStrictEqual(calls, [
+    [{ node: NODE, script: path.join(INSTALL_DIR, "scheduled-sync.js") }, ["/tmp/clawad-data"]],
+    [{ node: NODE, script: path.join(INSTALL_DIR, "scheduled-sync.js") }, ["/tmp/clawad-data"]],
+  ]);
 });
