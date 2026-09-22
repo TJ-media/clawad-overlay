@@ -175,6 +175,79 @@ describe("clawad-ad-window", () => {
     assert.strictEqual(sent.dismissible, false);
   });
 
+  it("일일 상한 도달이면 준비 안내 대신 상한 안내를 띄우고 sync를 부르지 않는다 (CLAW-288)", () => {
+    const instances = [];
+    const BrowserWindow = createFakeBrowserWindow(instances);
+    const syncCalls = [];
+    // 상한 도달 상태 = 작업 중인데 번들이 없고 exhausted가 참이다. CLAW-287의 준비 안내
+    // 조건과 겹치므로, exhausted를 보지 않으면 준비 안내가 상한 안내를 영구히 가린다.
+    const runtime = {
+      canRender: () => false,
+      dataDir: "C:\\clawad-test",
+      displayContext: () => ({ maxWidthPx: 320, exhausted: true, reward: null }),
+      isWorking: () => true,
+      rewardShopUrl: () => "",
+      stop() {},
+      tick: () => null,
+    };
+    const syncRunner = { run: (args) => { syncCalls.push(args); return true; } };
+    const initAdWindow = loadAdWindowWithFakes({ BrowserWindow, runtime, syncRunner });
+    const ad = initAdWindow({
+      dataDir: runtime.dataDir,
+      getNearestWorkArea: () => ({ x: 0, y: 0, width: 1000, height: 1000 }),
+      getPetWindowBounds: () => ({ x: 300, y: 50, width: 80, height: 80 }),
+      getTextScale: () => 1,
+    });
+
+    ad.tick();
+
+    // 서버가 상한에서 serveToken을 주지 않으므로 sync는 재고를 채울 수 없다.
+    assert.deepStrictEqual(syncCalls, [], "상한에서는 헛 sync를 돌리지 않는다");
+    const sent = instances[0].sent.at(-1);
+    assert.strictEqual(sent.kind, "notice");
+    assert.notStrictEqual(sent.text, "광고 준비 중…", "상한에서 준비 중은 거짓이다");
+    assert.strictEqual(sent.brand, "오늘 광고를 다 소진했어요!");
+    assert.strictEqual(sent.dismissible, true, "상한 안내는 끌 수 있어야 한다");
+  });
+
+  it("정책 캐시가 없거나 안내를 꺼도 캐시가 비면 sync는 깨운다 (CLAW-287)", () => {
+    // 상한 게이트(CLAW-288)를 넣으면서 sync 깨우기가 안내 표시에 딸려가지 않게 잠근다.
+    // 첫 실행은 정책이 없어 displayContext가 null이고, 안내를 끈 사용자도 캐시는 채워야 한다.
+    for (const [label, runtimeOverrides, ctxOverrides] of [
+      ["정책 캐시 없음", { displayContext: () => null }, {}],
+      ["안내 끔", {}, { clawadNoticesHidden: true }],
+    ]) {
+      const instances = [];
+      const syncCalls = [];
+      const runtime = {
+        canRender: () => false,
+        dataDir: "C:\\clawad-test",
+        displayContext: () => ({ maxWidthPx: 320, exhausted: false, reward: null }),
+        isWorking: () => true,
+        rewardShopUrl: () => "",
+        stop() {},
+        tick: () => null,
+        ...runtimeOverrides,
+      };
+      const initAdWindow = loadAdWindowWithFakes({
+        BrowserWindow: createFakeBrowserWindow(instances),
+        runtime,
+        syncRunner: { run: (args) => { syncCalls.push(args); return true; } },
+      });
+      const ad = initAdWindow({
+        dataDir: runtime.dataDir,
+        getNearestWorkArea: () => ({ x: 0, y: 0, width: 1000, height: 1000 }),
+        getPetWindowBounds: () => ({ x: 300, y: 50, width: 80, height: 80 }),
+        getTextScale: () => 1,
+        ...ctxOverrides,
+      });
+
+      ad.tick();
+
+      assert.deepStrictEqual(syncCalls, [[runtime.dataDir]], `${label}: sync를 깨워야 한다`);
+    }
+  });
+
   it("현재 광고창이 보낸 현재 renderId ACK만 런타임에 확정한다 (CLAW-287)", () => {
     const instances = [];
     const BrowserWindow = createFakeBrowserWindow(instances);

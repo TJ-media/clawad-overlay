@@ -243,12 +243,21 @@ module.exports = function initClawadAdWindow(ctx) {
     }
     const ad = runtime.tick(now);
     if (ad) return { ...ad, kind: "ad" };
-    if (typeof runtime.isWorking === "function" && runtime.isWorking(now)
-      && typeof runtime.canRender === "function" && !runtime.canRender(now)) {
-      syncRunner.run([runtime.dataDir]);
-      if (ctx.clawadNoticesHidden) return null;
-      const context = runtime.displayContext(now);
-      if (!context) return null;
+    const context = runtime.displayContext(now);
+    // "재고가 잠깐 비었다"일 때만 준비 중을 띄우고 sync를 깨운다. 일일 상한 도달은 서버가
+    // serveToken을 주지 않는 상태라 sync가 채울 수 없다 — 그때 "준비 중"은 거짓이고(해제는
+    // 다음 정책일 06:00이다) 상한 안내까지 가린다 (CLAW-288). 두 상태의 구분은 번들 개수로
+    // 추정하지 않고 clawad가 주는 exhausted로만 한다 (계약 §2.3).
+    //
+    // 판단을 안내 표시보다 먼저 두는 이유: sync 깨우기는 안내와 독립이다. 정책 캐시가 없는
+    // 첫 실행(context === null)과 안내를 끈 사용자도 캐시는 채워야 한다 (CLAW-287).
+    const preparing = !(context && context.exhausted)
+      && typeof runtime.isWorking === "function" && runtime.isWorking(now)
+      && typeof runtime.canRender === "function" && !runtime.canRender(now);
+    if (preparing) syncRunner.run([runtime.dataDir]);
+    if (ctx.clawadNoticesHidden) return null;
+    if (!context) return null;
+    if (preparing) {
       return {
         kind: "notice",
         text: PREPARING_NOTICE,
@@ -260,9 +269,6 @@ module.exports = function initClawadAdWindow(ctx) {
         maxWidthPx: context.maxWidthPx,
       };
     }
-    if (ctx.clawadNoticesHidden) return null;
-    const context = runtime.displayContext(now);
-    if (!context) return null;
     return {
       kind: "notice",
       text: rotatingNotice(now),
