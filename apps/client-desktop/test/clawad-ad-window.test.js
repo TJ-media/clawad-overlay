@@ -369,6 +369,7 @@ describe("clawad-ad-window", () => {
     ad.tick();
     const win = instances[0];
     assert.deepStrictEqual(win.boundsCalls, [{ x: 180, y: 136, width: 320, height: 55 }]);
+    assert.strictEqual(win.sent.at(-1).maxWidthPx, 320);
 
     petBounds = { ...petBounds, x: 340 };
     ad.reposition();

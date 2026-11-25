@@ -11,6 +11,7 @@
   const meta = document.getElementById("meta");
   const noticeDismiss = document.getElementById("notice-dismiss");
   let linked = false;
+  let currentAd = null;
 
   // 예상 포인트가 1 오를 때 숫자가 툭 튀지 않게 0.1씩 굴려 올린다 (CLAW-138 후속).
   //
@@ -65,7 +66,6 @@
   function paintReward(confirmed, accrued) {
     if (shownTenths === null) {
       reward.textContent = "";
-      syncMetaCutout();
       return;
     }
     const shown = formatTenths(shownTenths);
@@ -74,9 +74,6 @@
     } else {
       reward.textContent = `예상 적립 ${shown}P · 확정 ${confirmed.toLocaleString("ko-KR")}P`;
     }
-    // 굴러가는 동안 소수점 한 자리가 붙었다 떨어지며 폭이 바뀐다. 문구 둘째 줄이 비켜 갈
-    // 폭도 같이 따라가야 적립 현황에 겹치거나 사이가 벌어지지 않는다 (CLAW-169).
-    syncMetaCutout();
   }
 
   /**
@@ -135,8 +132,36 @@
     tweenTimer = setInterval(() => {
       shownTenths = Math.min(shownTenths + perStep, targetTenths);
       paintReward(confirmed, accrued);
+      // 숫자 폭이 바뀌면 본문 둘째 줄이 비켜 갈 폭과 필요한 창 폭을 함께 갱신한다.
+      const previous = parseFloat(strip.style.getPropertyValue("--meta-cutout"));
+      const cutout = syncMetaCutout();
+      if (cutout !== previous && Number.isFinite(currentAd?.maxWidthPx)) reportWidth();
       if (shownTenths >= targetTenths) stopTween();
     }, stepMs);
+  }
+
+  /** 상한에서 두 줄에 온전히 보이는 광고는 가장 오른쪽 내용까지만 폭을 잡는다. */
+  function measureWrappedWidth(naturalWidth, sidePadding) {
+    if (!Number.isFinite(currentAd?.maxWidthPx)) return naturalWidth;
+    const textScale = currentAd.textScale;
+    const scale = Number.isFinite(textScale) && textScale > 0 ? textScale : 1;
+    const cappedWidth = Math.round(Math.min(Math.ceil(naturalWidth), currentAd.maxWidthPx) * scale);
+    if (cappedWidth >= naturalWidth || cappedWidth <= sidePadding) return naturalWidth;
+
+    // 직전 광고 때문에 창이 좁아져 있어도 현재 광고는 가능한 폭에서 먼저 줄바꿈한다.
+    strip.style.width = `${cappedWidth - sidePadding}px`;
+    const cutout = syncMetaCutout();
+    const range = document.createRange();
+    range.selectNodeContents(text);
+    const lines = range.getClientRects();
+    const textBounds = text.getBoundingClientRect();
+    const [first, second] = lines;
+    if (lines.length !== 2 || second.top <= first.top || second.bottom > textBounds.bottom) return naturalWidth;
+
+    const occupiedRight = Math.max(first.right, second.right + cutout);
+    const unused = textBounds.right - occupiedRight;
+    // 창 픽셀을 먼저 올림해 배율 변환 후에도 필요한 폭을 확보한다.
+    return unused > 0 ? Math.ceil(cappedWidth - unused) / scale : naturalWidth;
   }
 
   /**
@@ -149,6 +174,10 @@
    */
   function measureNaturalWidth() {
     const stripWidth = strip.style.width;
+    const bodyStyle = window.getComputedStyle(document.body);
+    const padding = parseFloat(bodyStyle.paddingLeft) + parseFloat(bodyStyle.paddingRight);
+    const sidePadding = Number.isFinite(padding) ? padding : 0;
+
     // 컷아웃 float을 재는 동안만 지운다 (CLAW-219).
     //
     // **고유 폭 계산에는 float의 박스 폭이 더해지고 `shape-outside`는 반영되지 않는다.**
@@ -160,22 +189,19 @@
     // 두 줄로 감기면서 2행이 컷아웃 자리를 실제로 썼기 때문이다. 증상이 플랫폼별로 다를 뿐
     // 측정이 틀린 것은 양쪽 같다.
     //
-    // **레이아웃 시점의 컷아웃은 그대로 둔다.** 두 줄로 감기는 문구는 여기서 잰 한 줄 폭이
-    // 상한을 넘어 메인이 자르고, 그 뒤 배치에서는 원래 컷아웃이 2행을 비켜 가게 한다.
+    // 한 줄 자연 폭을 잰 뒤, 두 줄이 필요한 광고에만 컷아웃을 적용해 실제 줄의 폭을 잰다.
     const cutout = strip.style.getPropertyValue("--meta-cutout");
-    strip.style.setProperty("--meta-cutout", "0px");
-    strip.style.width = "max-content";
-    const measured = strip.getBoundingClientRect().width;
-    strip.style.width = stripWidth;
-    if (cutout) strip.style.setProperty("--meta-cutout", cutout);
-    else strip.style.removeProperty("--meta-cutout");
-    // 메인은 이 값을 **창 폭**으로 쓴다. 그런데 스트립은 body 안에 있고 body에는 좌우 여백이
-    // 있으므로(세션 HUD와 맞춘 padding), 여백을 더하지 않으면 창이 스트립보다 그만큼 좁게 떠서
-    // 스트립이 눌리고 **문구가 길이와 무관하게 항상 말줄임된다.**
-    // 상수로 박지 않고 계산값에서 읽는다 — CSS가 유일한 출처여야 둘이 어긋나지 않는다.
-    const bodyStyle = window.getComputedStyle(document.body);
-    const sidePadding = parseFloat(bodyStyle.paddingLeft) + parseFloat(bodyStyle.paddingRight);
-    return Math.ceil(measured + (Number.isFinite(sidePadding) ? sidePadding : 0));
+    try {
+      strip.style.setProperty("--meta-cutout", "0px");
+      strip.style.width = "max-content";
+      // 메인은 body의 좌우 여백까지 포함한 창 폭을 받는다.
+      const naturalWidth = strip.getBoundingClientRect().width + sidePadding;
+      return Math.ceil(measureWrappedWidth(naturalWidth, sidePadding));
+    } finally {
+      strip.style.width = stripWidth;
+      if (cutout) strip.style.setProperty("--meta-cutout", cutout);
+      else strip.style.removeProperty("--meta-cutout");
+    }
   }
 
   /**
@@ -187,10 +213,10 @@
    * 값은 CSS에서 읽는다 — 간격을 상수로 박으면 CSS와 어긋난다.
    */
   function syncMetaCutout() {
-    if (!meta) return;
     const gap = parseFloat(window.getComputedStyle(strip).columnGap);
-    const width = meta.getBoundingClientRect().width + (Number.isFinite(gap) ? gap : 0);
-    strip.style.setProperty("--meta-cutout", `${Math.ceil(width)}px`);
+    const width = Math.ceil(meta.getBoundingClientRect().width + (Number.isFinite(gap) ? gap : 0));
+    strip.style.setProperty("--meta-cutout", `${width}px`);
+    return width;
   }
 
   function reportWidth() {
@@ -223,6 +249,7 @@
       noticeDismiss.hidden = true;
       renderReward(null);
       linked = false;
+      currentAd = null;
       return;
     }
     text.textContent = ad.text;
@@ -234,13 +261,14 @@
     renderReward(ad.reward);
     // 광고일 때만 [광고]를 단다. kind가 빠져 있으면 광고로 본다 — 표기가 빠지는 쪽이 아니라
     // 붙는 쪽으로 기울여야 안전하다 (CLAUDE.md §4).
-    strip.classList.toggle("notice", ad.kind === "login" || ad.kind === "notice");
+    const isNotice = ad.kind === "login" || ad.kind === "notice";
+    currentAd = isNotice ? null : ad;
+    strip.classList.toggle("notice", isNotice);
     // 링크 여부는 메인이 검증해서 내려준다(https만). 렌더러는 URL 자체를 다루지 않는다.
     linked = ad.linked === true;
     strip.classList.toggle("linked", linked);
     strip.classList.add("visible");
     // 적립 현황을 다 그린 뒤에 컷아웃을 맞춘다 — 금액이 바뀌면 비켜 갈 폭도 바뀐다.
-    // 폭 측정보다 먼저 해야 한다: 컷아웃이 문구가 흐르는 모양을 바꾸므로 자연 폭에도 반영된다.
     syncMetaCutout();
     // 클래스까지 다 붙인 뒤에 잰다 — notice/linked가 [광고]↔[안내] 표기와 밑줄을 바꿔 폭이 달라진다.
     reportWidth();

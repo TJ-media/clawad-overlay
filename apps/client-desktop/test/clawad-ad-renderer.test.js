@@ -324,6 +324,53 @@ test("문구가 길어지면 보고하는 폭도 커진다", (t) => {
   assert.ok(reported[1] > reported[0], "긴 문구가 더 넓게 보고돼야 한다");
 });
 
+test("두 줄 광고는 본문과 적립 현황에 필요한 폭만 보고한다", () => {
+  const { render, strip, text, meta, reported } = mountRenderer();
+  text.getBoundingClientRect = () => ({ right: 406, bottom: 40 });
+  meta.getBoundingClientRect = () => ({ width: 130 });
+  const lines = [
+    { right: 336, top: 6, bottom: 22 },
+    { right: 193, top: 23, bottom: 39 },
+  ];
+  document.createRange = () => ({
+    selectNodeContents() {},
+    getClientRects() {
+      assert.strictEqual(strip.style.width, "414px", "직전 창 폭과 무관하게 상한에서 줄바꿈을 잰다");
+      return lines;
+    },
+  });
+  const payload = { kind: "ad", text: "긴 광고 문구 ".repeat(8), maxWidthPx: 420 };
+
+  render(payload);
+  assert.strictEqual(reported.at(-1), 350, "첫 줄 끝에 맞춰 좁힌다");
+
+  lines[1].right = 240;
+  render(payload);
+  assert.strictEqual(reported.at(-1), 392, "둘째 줄과 적립 현황이 차지하는 폭을 확보한다");
+
+  lines.push({ right: 90, top: 40, bottom: 56 });
+  render(payload);
+  assert.ok(reported.at(-1) >= 420, "두 줄에 담기지 않으면 창 폭 상한을 쓴다");
+  assert.strictEqual(strip.style.width, "", "측정용 폭을 화면에 남기지 않는다");
+});
+
+test("두 줄 광고는 축소 배율에서 필요한 창 폭보다 작게 반올림하지 않는다", () => {
+  const { render, text, meta, reported } = mountRenderer();
+  text.getBoundingClientRect = () => ({ right: 324, bottom: 40 });
+  meta.getBoundingClientRect = () => ({ width: 130 });
+  document.createRange = () => ({
+    selectNodeContents() {},
+    getClientRects: () => [
+      { right: 290.27, top: 6, bottom: 22 },
+      { right: 145, top: 23, bottom: 39 },
+    ],
+  });
+  const textScale = 0.8;
+
+  render({ kind: "ad", text: "긴 광고 문구 ".repeat(8), maxWidthPx: 420, textScale });
+  assert.strictEqual(Math.round(reported.at(-1) * textScale), 303);
+});
+
 test("측정이 끝나면 임시로 바꾼 스타일을 되돌린다 — 화면에 남으면 안 된다", (t) => {
   t.mock.timers.enable({ apis: ["setInterval"] });
   const { render, strip, text } = mountRenderer();
