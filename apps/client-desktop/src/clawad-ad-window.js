@@ -218,6 +218,8 @@ module.exports = function initClawadAdWindow(ctx) {
         text: payload.text,
         brand: payload.brand,
         reward: payload.reward,
+        maxWidthPx: clampWidth(null, payload.maxWidthPx),
+        textScale: getScale(),
         dismissible: payload.kind === "notice" && payload.dismissible === true,
         dismissLabel: payload.kind === "notice" && typeof payload.dismissLabel === "string" ? payload.dismissLabel : "",
         linked: payload.kind === "login" || Boolean(payload.clickUrl),
